@@ -105,7 +105,6 @@ jobs:
           test -s "$FEDORA_KEY_FILE" || { echo "Failed to fetch Fedora GPG key from https://fedoraproject.org/fedora.gpg"; exit 1; }
 
           sudo dnf --installroot="$ROOTFS_DIR" --releasever="$FEDORA_RELEASE" --forcearch=aarch64 -y \
-            --setopt=install_weak_deps=False \
             --setopt=cachedir=$HOME/.cache/dnf \
             --setopt=reposdir=/dev/null \
             --setopt=fastestmirror=False \
@@ -118,14 +117,16 @@ jobs:
             --setopt=updates.gpgkey=file://${FEDORA_KEY_FILE} \
             --repofrompath=fedora,https://dl.fedoraproject.org/pub/fedora/linux/releases/${FEDORA_RELEASE}/Everything/aarch64/os/ \
             --repofrompath=updates,https://dl.fedoraproject.org/pub/fedora/linux/updates/${FEDORA_RELEASE}/Everything/aarch64/ \
+            --exclude=gnome-boxes,gnome-connections,snapshot,gnome-weather,showtime,decibels,gnome-contacts,gnome-maps,simple-scan,gnome-clocks,yelp,gnome-user-docs,gnome-calculator,gnome-calendar \
             install \
-            systemd passwd dnf NetworkManager sudo \
-            linux-firmware bluez udev dracut dracut-network \
+            @gnome-desktop \
+            passwd dnf sudo udev \
+            linux-firmware bluez dracut dracut-network btrfs-progs \
             grub2-efi-aa64 grub2-efi-aa64-modules efibootmgr shim-aa64 \
-            gnome-shell gdm nautilus ptyxis gnome-system-monitor gnome-control-center \
-            adwaita-icon-theme gnome-backgrounds gnome-disk-utility gnome-tweaks gnome-software \
-            flatpak google-noto-sans-cjk-fonts parted screen fcitx5-chinese-addons fcitx5-configtool nano \
-            vim git openssh-server curl iproute net-tools traceroute ncat telnet iputils htop fastfetch which firefox
+            gnome-tweaks flatpak google-noto-sans-cjk-fonts adwaita-mono-fonts \
+            fcitx5-chinese-addons fcitx5-configtool \
+            parted iproute net-tools traceroute ncat telnet iputils which \
+            vim git openssh-server curl htop fastfetch screen nano firefox
 
       - name: Populate rootfs (kernel + firmware + tools)
         run: |
