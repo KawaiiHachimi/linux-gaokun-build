@@ -93,10 +93,27 @@ jobs:
       - name: Bootstrap Fedora rootfs
         run: |
           set -euxo pipefail
+
+          KEY_DIR="$WORKDIR/keys"
+          mkdir -p "$KEY_DIR"
+          FEDORA_KEY_FILE="$KEY_DIR/RPM-GPG-KEY-fedora-${FEDORA_RELEASE}-primary"
+
+          if [ ! -s "$FEDORA_KEY_FILE" ]; then
+            curl -fsSL "https://fedoraproject.org/fedora.gpg" -o "$FEDORA_KEY_FILE"
+          fi
+
+          test -s "$FEDORA_KEY_FILE" || { echo "Failed to fetch Fedora GPG key from https://fedoraproject.org/fedora.gpg"; exit 1; }
+
           sudo dnf --installroot="$ROOTFS_DIR" --releasever="$FEDORA_RELEASE" --forcearch=aarch64 -y \
             --setopt=install_weak_deps=False \
             --setopt=cachedir=$HOME/.cache/dnf \
             --setopt=reposdir=/dev/null \
+            --setopt=fedora.gpgcheck=1 \
+            --setopt=fedora.repo_gpgcheck=0 \
+            --setopt=fedora.gpgkey=file://${FEDORA_KEY_FILE} \
+            --setopt=updates.gpgcheck=1 \
+            --setopt=updates.repo_gpgcheck=0 \
+            --setopt=updates.gpgkey=file://${FEDORA_KEY_FILE} \
             --repofrompath=fedora,https://download.fedoraproject.org/pub/fedora/linux/releases/${FEDORA_RELEASE}/Everything/aarch64/os/ \
             --repofrompath=updates,https://download.fedoraproject.org/pub/fedora/linux/updates/${FEDORA_RELEASE}/Everything/aarch64/ \
             install \
