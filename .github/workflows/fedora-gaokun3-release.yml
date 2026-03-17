@@ -120,8 +120,10 @@ jobs:
             systemd passwd dnf NetworkManager sudo \
             linux-firmware bluez udev dracut dracut-network \
             grub2-efi-aa64 grub2-efi-aa64-modules efibootmgr shim-aa64 \
-            gnome-shell gdm nautilus gnome-terminal gnome-system-monitor gnome-control-center \
-            vim git openssh-server curl
+            gnome-shell gdm nautilus ptyxis gnome-system-monitor gnome-control-center \
+            adwaita-icon-theme gnome-backgrounds gnome-disk-utility gnome-tweaks gnome-software \
+            flatpak google-noto-sans-cjk-fonts parted screen fcitx5-chinese-addons fcitx5-configtool nano \
+            vim git openssh-server curl iproute net-tools traceroute ncat telnet iputils htop fastfetch which firefox
 
       - name: Populate rootfs (kernel + firmware + tools)
         run: |
