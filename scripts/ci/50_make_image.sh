@@ -71,6 +71,7 @@ echo -e "panel-himax-hx83121a\nmsm\nhid_multitouch" > /etc/modules-load.d/displa
 echo -e "huawei-gaokun-ec\nhuawei-gaokun-battery\nucsi_huawei_gaokun" > /etc/modules-load.d/battery.conf
 
 cat > /etc/dracut.conf.d/matebook.conf <<MODEOF
+hostonly="no"
 add_drivers+=" nvme phy-qcom-qmp-pcie phy-qcom-qmp-combo phy-qcom-qmp-usb phy-qcom-snps-femto-v2 usb-storage uas typec panel-himax-hx83121a msm i2c-hid-of "
 install_items+=" /lib/firmware/qcom/a660_sqe.fw /lib/firmware/qcom/a660_gmu.bin /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/* "
 MODEOF
