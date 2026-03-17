@@ -1,0 +1,348 @@
+name: Build Fedora Gaokun3 Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      fedora_release:
+        description: Fedora release version
+        required: true
+        default: "44"
+      kernel_tag:
+        description: Linux kernel tag
+        required: true
+        default: "v7.0-rc4"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-24.04
+    env:
+      TZ: UTC
+      FEDORA_RELEASE: ${{ github.event.inputs.fedora_release }}
+      KERNEL_TAG: ${{ github.event.inputs.kernel_tag }}
+      IMAGE_SIZE: 12G
+      IMAGE_CHUNK_SIZE: 1900M
+      GAOKUN_DIR: ${{ github.workspace }}
+      WORKDIR: ${{ github.workspace }}/build-fedora
+      KERN_SRC: ${{ github.workspace }}/build-fedora/mainline-linux
+      KERN_OUT: ${{ github.workspace }}/build-fedora/kernel-out
+      ROOTFS_DIR: ${{ github.workspace }}/build-fedora/rootfs
+      ARTIFACT_DIR: ${{ github.workspace }}/build-fedora/artifacts
+      FW_CACHE_DIR: ${{ github.workspace }}/.cache/firmware
+      FW_BUILD_DIR: ${{ github.workspace }}/build-fedora/firmware-build
+      IMAGE_FILE: ${{ github.workspace }}/build-fedora/fedora-${{ github.event.inputs.fedora_release }}-gaokun3.img
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install host dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            git make bc bison flex cpio rsync kmod fakeroot \
+            libssl-dev libelf-dev dwarves ccache \
+            gcc-aarch64-linux-gnu qemu-user-static binfmt-support \
+            dnf libarchive-tools wget unzip curl jq \
+            parted dosfstools e2fsprogs zstd xz-utils
+
+      - name: Restore caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+            ~/.cache/dnf
+            ${{ github.workspace }}/.cache/firmware/linux-firmware
+            ${{ github.workspace }}/.cache/firmware/uup-drivers
+            ${{ github.workspace }}/.cache/firmware/uup-drivers.zip
+          key: gaokun3-fedora-${{ env.FEDORA_RELEASE }}-${{ env.KERNEL_TAG }}-${{ hashFiles('gaokun-patches/*.patch') }}
+          restore-keys: |
+            gaokun3-fedora-${{ env.FEDORA_RELEASE }}-${{ env.KERNEL_TAG }}-
+            gaokun3-fedora-${{ env.FEDORA_RELEASE }}-
+
+      - name: Prepare build workspace
+        run: |
+          set -euxo pipefail
+          mkdir -p "$WORKDIR" "$KERN_OUT" "$ROOTFS_DIR" "$ARTIFACT_DIR" "$FW_CACHE_DIR"
+
+          if [[ "$(uname -m)" == "aarch64" ]]; then
+            echo "CROSS_COMPILE=" >> "$GITHUB_ENV"
+          else
+            echo "CROSS_COMPILE=aarch64-linux-gnu-" >> "$GITHUB_ENV"
+          fi
+
+          echo "ARCH=arm64" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+          echo "PATH=/usr/lib/ccache:$PATH" >> "$GITHUB_ENV"
+
+      - name: Clone kernel and device repos
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 --branch "$KERNEL_TAG" \
+            https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git "$KERN_SRC"
+
+          if [ ! -d "$GAOKUN_DIR/matebook-e-go-linux" ]; then
+            git clone --depth 1 https://github.com/whitelewi1-ctrl/matebook-e-go-linux.git \
+              "$GAOKUN_DIR/matebook-e-go-linux"
+          fi
+
+      - name: Apply patches and build kernel
+        id: kernel
+        run: |
+          set -euxo pipefail
+          git -C "$KERN_SRC" am "$GAOKUN_DIR"/gaokun-patches/*.patch
+          make -C "$KERN_SRC" O="$KERN_OUT" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" olddefconfig
+          make -C "$KERN_SRC" O="$KERN_OUT" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" -j"$(nproc)"
+
+          KREL="$(cat "$KERN_OUT/include/config/kernel.release")"
+          echo "KREL=$KREL" >> "$GITHUB_ENV"
+          echo "kernel_release=$KREL" >> "$GITHUB_OUTPUT"
+
+      - name: Export gaokun3_defconfig
+        run: |
+          set -euxo pipefail
+          make -C "$KERN_SRC" O="$KERN_OUT" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" savedefconfig
+          cp "$KERN_OUT/defconfig" "$ARTIFACT_DIR/gaokun3_defconfig"
+
+      - name: Bootstrap Fedora rootfs
+        run: |
+          set -euxo pipefail
+          sudo dnf --installroot="$ROOTFS_DIR" --releasever="$FEDORA_RELEASE" --forcearch=aarch64 -y \
+            --setopt=install_weak_deps=False \
+            --setopt=cachedir=$HOME/.cache/dnf \
+            --setopt=reposdir=/dev/null \
+            --repofrompath=fedora,https://download.fedoraproject.org/pub/fedora/linux/releases/${FEDORA_RELEASE}/Everything/aarch64/os/ \
+            --repofrompath=updates,https://download.fedoraproject.org/pub/fedora/linux/updates/${FEDORA_RELEASE}/Everything/aarch64/ \
+            install \
+            systemd passwd dnf NetworkManager sudo \
+            linux-firmware bluez udev dracut dracut-network \
+            grub2-efi-aa64 grub2-efi-aa64-modules efibootmgr shim-aa64 \
+            gnome-shell gdm nautilus gnome-terminal gnome-system-monitor gnome-control-center \
+            vim git openssh-server curl
+
+      - name: Install kernel and dtb into rootfs
+        run: |
+          set -euxo pipefail
+          sudo make -C "$KERN_SRC" O="$KERN_OUT" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
+            INSTALL_MOD_PATH="$ROOTFS_DIR" modules_install
+          sudo rm -f "$ROOTFS_DIR/lib/modules/$KREL/build" "$ROOTFS_DIR/lib/modules/$KREL/source"
+
+          sudo cp "$KERN_OUT/arch/arm64/boot/Image" "$ROOTFS_DIR/boot/vmlinuz-$KREL"
+          sudo mkdir -p "$ROOTFS_DIR/boot/dtb-$KREL/qcom"
+          sudo cp "$KERN_OUT/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dtb" \
+            "$ROOTFS_DIR/boot/dtb-$KREL/qcom/"
+
+      - name: Prepare and inject firmware
+        run: |
+          set -euxo pipefail
+          if [ ! -d "$FW_CACHE_DIR/linux-firmware" ]; then
+            git clone --depth 1 https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git \
+              "$FW_CACHE_DIR/linux-firmware"
+          fi
+
+          if [ ! -f "$FW_CACHE_DIR/uup-drivers.zip" ]; then
+            wget https://github.com/matebook-e-go/uup-drivers-sc8280xp/releases/download/200.0.10.0/200.0.10.0.zip \
+              -O "$FW_CACHE_DIR/uup-drivers.zip"
+          fi
+
+          if [ ! -d "$FW_CACHE_DIR/uup-drivers" ]; then
+            mkdir -p "$FW_CACHE_DIR/uup-drivers"
+            unzip -o "$FW_CACHE_DIR/uup-drivers.zip" -d "$FW_CACHE_DIR/uup-drivers"
+            pushd "$FW_CACHE_DIR/uup-drivers"
+            for cab in qcdx8280.cab qcsubsys_ext_adsp8280.cab qcsubsys_ext_cdsp8280.cab qcsubsys_ext_scss8280.cab; do
+              bsdtar -xf "$cab"
+            done
+            popd
+          fi
+
+          rm -rf "$FW_BUILD_DIR"
+          mkdir -p "$FW_BUILD_DIR"
+          ln -s "$FW_CACHE_DIR/linux-firmware" "$FW_BUILD_DIR/linux-firmware"
+          ln -s "$FW_CACHE_DIR/uup-drivers" "$FW_BUILD_DIR/uup-drivers"
+
+          GK3_DIR="$ROOTFS_DIR/lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3"
+          sudo mkdir -p "$GK3_DIR"
+
+          for fw in adspr.jsn adspua.jsn battmgr.jsn cdspr.jsn qcadsp8280.mbn qccdsp8280.mbn qcdxkmsuc8280.mbn qcslpi8280.mbn qcvss8280.mbn; do
+            sudo cp "$FW_BUILD_DIR/uup-drivers/$fw" "$GK3_DIR/"
+          done
+
+          sudo cp "$FW_BUILD_DIR/linux-firmware/qcom/sc8280xp/LENOVO/21BX/audioreach-tplg.bin" "$GK3_DIR/"
+          sudo ln -sf HUAWEI/gaokun3/audioreach-tplg.bin \
+            "$ROOTFS_DIR/lib/firmware/qcom/sc8280xp/SC8280XP-HUAWEI-GAOKUN3-tplg.bin"
+
+          sudo mkdir -p "$ROOTFS_DIR/lib/firmware/ath11k/WCN6855/hw2.0" \
+                        "$ROOTFS_DIR/lib/firmware/qca" \
+                        "$ROOTFS_DIR/lib/firmware/qcom"
+          sudo cp -r "$FW_BUILD_DIR/linux-firmware/ath11k/WCN6855/hw2.0/"* \
+            "$ROOTFS_DIR/lib/firmware/ath11k/WCN6855/hw2.0/"
+          sudo ln -sf hw2.0 "$ROOTFS_DIR/lib/firmware/ath11k/WCN6855/hw2.1"
+          sudo cp "$FW_BUILD_DIR/linux-firmware/qca/hp"* "$ROOTFS_DIR/lib/firmware/qca/" || true
+          sudo cp "$FW_BUILD_DIR/linux-firmware/qcom/a660_gmu.bin" \
+                  "$FW_BUILD_DIR/linux-firmware/qcom/a660_sqe.fw" \
+                  "$ROOTFS_DIR/lib/firmware/qcom/"
+
+      - name: Install device helper tools
+        run: |
+          set -euxo pipefail
+          sudo mkdir -p "$ROOTFS_DIR/usr/local/bin" "$ROOTFS_DIR/etc/systemd/system"
+          sudo cp "$GAOKUN_DIR/matebook-e-go-linux/tools/touchpad/huawei-tp-activate.py" "$ROOTFS_DIR/usr/local/bin/"
+          sudo cp "$GAOKUN_DIR/matebook-e-go-linux/tools/touchpad/huawei-touchpad.service" "$ROOTFS_DIR/etc/systemd/system/"
+          sudo chmod +x "$ROOTFS_DIR/usr/local/bin/huawei-tp-activate.py"
+          sudo cp "$GAOKUN_DIR/matebook-e-go-linux/tools/bluetooth/patch-nvm-bdaddr.py" "$ROOTFS_DIR/usr/local/bin/"
+          sudo chmod +x "$ROOTFS_DIR/usr/local/bin/patch-nvm-bdaddr.py"
+
+      - name: Create disk image and configure boot
+        run: |
+          set -euxo pipefail
+          truncate -s "$IMAGE_SIZE" "$IMAGE_FILE"
+          parted -s "$IMAGE_FILE" mklabel gpt
+          parted -s "$IMAGE_FILE" mkpart EFI fat32 1MiB 256MiB
+          parted -s "$IMAGE_FILE" set 1 esp on
+          parted -s "$IMAGE_FILE" mkpart rootfs ext4 256MiB 100%
+
+          LOOP="$(sudo losetup --show -fP "$IMAGE_FILE")"
+          sudo mkfs.vfat -F32 -n EFI "${LOOP}p1"
+          sudo mkfs.ext4 -L rootfs "${LOOP}p2"
+
+          EFI_UUID="$(sudo blkid -s UUID -o value "${LOOP}p1")"
+          ROOT_UUID="$(sudo blkid -s UUID -o value "${LOOP}p2")"
+
+          MNT=/mnt/ego-fedora
+          cleanup() {
+            set +e
+            sudo umount "$MNT/dev/pts" 2>/dev/null || true
+            sudo umount "$MNT/boot/efi" 2>/dev/null || true
+            sudo umount "$MNT/dev" 2>/dev/null || true
+            sudo umount "$MNT/proc" 2>/dev/null || true
+            sudo umount "$MNT/sys" 2>/dev/null || true
+            sudo umount "$MNT/run" 2>/dev/null || true
+            sudo umount "$MNT" 2>/dev/null || true
+            sudo losetup -d "$LOOP" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          sudo mkdir -p "$MNT"
+          sudo mount "${LOOP}p2" "$MNT"
+          sudo mkdir -p "$MNT/boot/efi"
+          sudo mount "${LOOP}p1" "$MNT/boot/efi"
+
+          sudo rsync -aHAX "$ROOTFS_DIR/" "$MNT/"
+
+          sudo tee "$MNT/etc/fstab" > /dev/null <<EOF
+UUID=${ROOT_UUID}  /         ext4   defaults,noatime  0  1
+UUID=${EFI_UUID}   /boot/efi vfat   defaults          0  2
+EOF
+
+          sudo cp /usr/bin/qemu-aarch64-static "$MNT/usr/bin/"
+          sudo mount --bind /dev "$MNT/dev"
+          sudo mount --bind /dev/pts "$MNT/dev/pts"
+          sudo mount -t proc proc "$MNT/proc"
+          sudo mount -t sysfs sys "$MNT/sys"
+          sudo mount -t tmpfs tmpfs "$MNT/run"
+
+          sudo chroot "$MNT" /bin/bash -euxo pipefail <<CHROOT_EOF
+KREL="$(ls /lib/modules | head -n1)"
+
+echo "fedora" > /etc/hostname
+id -u user >/dev/null 2>&1 || useradd -m -s /bin/bash -G wheel user
+echo "user:user" | chpasswd
+mkdir -p /etc/sudoers.d
+echo "%wheel ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/wheel-nopasswd
+chmod 440 /etc/sudoers.d/wheel-nopasswd
+
+systemctl enable gdm NetworkManager sshd huawei-touchpad.service || true
+
+mkdir -p /etc/modules-load.d
+echo -e "pci-pwrctrl-pwrseq\nath11k_pci" > /etc/modules-load.d/wifi.conf
+echo "btqca" > /etc/modules-load.d/bluetooth.conf
+echo -e "panel-himax-hx83121a\nmsm\nhid_multitouch" > /etc/modules-load.d/display.conf
+echo -e "huawei-gaokun-ec\nhuawei-gaokun-battery\nucsi_huawei_gaokun" > /etc/modules-load.d/battery.conf
+
+cat > /etc/dracut.conf.d/matebook.conf <<MODEOF
+add_drivers+=" nvme phy-qcom-qmp-pcie phy-qcom-qmp-combo phy-qcom-qmp-usb phy-qcom-snps-femto-v2 usb-storage uas typec panel-himax-hx83121a msm i2c-hid-of "
+install_items+=" /lib/firmware/qcom/a660_sqe.fw /lib/firmware/qcom/a660_gmu.bin /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/* "
+MODEOF
+
+dracut --force --kver "$KREL"
+
+cat > /etc/default/grub <<GRUBEOF
+GRUB_DEFAULT=saved
+GRUB_TIMEOUT=5
+GRUB_DISTRIBUTOR="Fedora"
+GRUB_ENABLE_BLSCFG=false
+GRUB_CMDLINE_LINUX="rhgb clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave modprobe.blacklist=simpledrm efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4"
+GRUB_DEFAULT_DTB="qcom/sc8280xp-huawei-gaokun3.dtb"
+GRUBEOF
+
+grub2-install --target=arm64-efi --efi-directory=/boot/efi --boot-directory=/boot --removable --force
+grub2-mkconfig -o /boot/grub2/grub.cfg
+
+ROOT_UUID="$(blkid -s UUID -o value /dev/disk/by-label/rootfs)"
+mkdir -p /boot/efi/EFI/BOOT /boot/efi/EFI/fedora
+cat > /boot/efi/EFI/BOOT/grub.cfg <<EOF
+search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
+set prefix=(\$root)/boot/grub2
+configfile (\$root)/boot/grub2/grub.cfg
+EOF
+cp /boot/efi/EFI/BOOT/grub.cfg /boot/efi/EFI/fedora/grub.cfg
+
+grep -n "devicetree" /boot/grub2/grub.cfg
+CHROOT_EOF
+
+          sync
+          sudo cp "$MNT/boot/grub2/grub.cfg" "$ARTIFACT_DIR/grub.cfg"
+          sudo cp "$MNT/boot/efi/EFI/BOOT/grub.cfg" "$ARTIFACT_DIR/efi-bridge-grub.cfg"
+
+          trap - EXIT
+          cleanup
+
+      - name: Package image and generate release info
+        id: package
+        run: |
+          set -euxo pipefail
+          cp "$IMAGE_FILE" "$ARTIFACT_DIR/"
+          zstd -T0 -19 "$ARTIFACT_DIR/$(basename "$IMAGE_FILE")" -o "$ARTIFACT_DIR/$(basename "$IMAGE_FILE").zst"
+          split -b "$IMAGE_CHUNK_SIZE" -d -a 3 \
+            "$ARTIFACT_DIR/$(basename "$IMAGE_FILE").zst" \
+            "$ARTIFACT_DIR/$(basename "$IMAGE_FILE").zst.part-"
+          sha256sum "$ARTIFACT_DIR"/* > "$ARTIFACT_DIR/SHA256SUMS.txt"
+
+          cat > "$ARTIFACT_DIR/release-info.txt" <<EOF
+Distribution: Fedora ${FEDORA_RELEASE} (Minimal GNOME)
+Kernel Tag: ${KERNEL_TAG}
+Kernel Release: ${KREL}
+Architecture: arm64
+Bootloader: GRUB2 (BLS disabled, traditional grub.cfg)
+Image File: $(basename "$IMAGE_FILE")
+Compressed File: $(basename "$IMAGE_FILE").zst
+Build Time (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+EOF
+
+          TAG_NAME="fedora${FEDORA_RELEASE}-${KREL}-$(date -u +%Y%m%d%H%M%S)"
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "artifact_dir=$ARTIFACT_DIR" >> "$GITHUB_OUTPUT"
+          echo "kernel_release=$KREL" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifacts (workflow)
+        uses: actions/upload-artifact@v4
+        with:
+          name: fedora-gaokun3-build
+          path: ${{ steps.package.outputs.artifact_dir }}/*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.package.outputs.tag_name }}
+          name: Fedora ${{ env.FEDORA_RELEASE }} - gaokun3 - ${{ steps.package.outputs.kernel_release }}
+          body_path: ${{ steps.package.outputs.artifact_dir }}/release-info.txt
+          files: |
+            ${{ steps.package.outputs.artifact_dir }}/gaokun3_defconfig
+            ${{ steps.package.outputs.artifact_dir }}/release-info.txt
+            ${{ steps.package.outputs.artifact_dir }}/SHA256SUMS.txt
+            ${{ steps.package.outputs.artifact_dir }}/grub.cfg
+            ${{ steps.package.outputs.artifact_dir }}/efi-bridge-grub.cfg
+            ${{ steps.package.outputs.artifact_dir }}/*.zst.part-*

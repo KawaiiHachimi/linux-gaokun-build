@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: HE Zhengyu <hezhengyu@radxa.com>
+Date: Tue, 2 Sep 2025 11:31:44 +0800
+Subject: [PATCH] feat: Radxa custom kernel config
+
+Signed-off-by: HE Zhengyu <hezhengyu@radxa.com>
+---
+ arch/arm64/configs/radxa_custom.config | 10 ++++
+ 1 file changed, 10 insertions(+)
+ create mode 100644 arch/arm64/configs/radxa_custom.config
+
+diff --git a/src/arch/arm64/configs/radxa_custom.config b/src/arch/arm64/configs/radxa_custom.config
+new file mode 100644
+index 000000000000..4e8c56c4c5cd
+--- /dev/null
++++ b/src/arch/arm64/configs/radxa_custom.config
+@@ -0,0 +1,10 @@
++# Kernel modules build by portage and XZ compressed fail to load with latest kmod tools.
++# DKMS: https://bugs.gentoo.org/920837
++CONFIG_MODULE_COMPRESS_XZ=n
++CONFIG_MODULE_COMPRESS_ZSTD=y
++
++# Disable CONFIG_EFI_ZBOOT to support U-Boot stdboot with overlay
++CONFIG_EFI_ZBOOT=n
++
++# The rockchip overlays in radxa-pkg/radxa-overlays are not compatible with the mainline kernel(> 6.1).
++CONFIG_ARCH_ROCKCHIP=n
+-- 
+2.50.1
+
