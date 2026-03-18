@@ -232,6 +232,45 @@ mkdir -p /etc/sudoers.d
 echo "%wheel ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/wheel-nopasswd
 chmod 440 /etc/sudoers.d/wheel-nopasswd
 
+# 预置屏幕方向与缩放，并同步给 GDM 登录界面
+mkdir -p /home/user/.config
+cat > /home/user/.config/monitors.xml <<EOF
+<monitors version="2">
+    <configuration>
+        <layoutmode>logical</layoutmode>
+        <logicalmonitor>
+            <x>0</x>
+            <y>0</y>
+            <scale>1.6666666269302368</scale>
+            <primary>yes</primary>
+            <transform>
+                <rotation>right</rotation>
+                <flipped>no</flipped>
+            </transform>
+            <monitor>
+                <monitorspec>
+                    <connector>DSI-1</connector>
+                    <vendor>unknown</vendor>
+                    <product>unknown</product>
+                    <serial>unknown</serial>
+                </monitorspec>
+                <mode>
+                    <width>1600</width>
+                    <height>2560</height>
+                    <rate>59.694</rate>
+                </mode>
+            </monitor>
+        </logicalmonitor>
+    </configuration>
+</monitors>
+EOF
+chown user:user /home/user/.config/monitors.xml
+
+GDM_DIR="/var/lib/gdm/seat0/config"
+mkdir -p "$GDM_DIR"
+cp /home/user/.config/monitors.xml "$GDM_DIR/monitors.xml"
+chown gdm:gdm "$GDM_DIR/monitors.xml"
+
 # 开启图形、网络、SSH 和触控板服务
 systemctl enable gdm NetworkManager sshd huawei-touchpad.service
 

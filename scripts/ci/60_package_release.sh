@@ -20,50 +20,77 @@ zstd -T0 -19 "$ARTIFACT_DIR/$IMAGE_BASENAME" -o "$ZST_FILE"
 
 if [ "$(stat -c '%s' "$ZST_FILE")" -lt "$SPLIT_THRESHOLD_BYTES" ]; then
   PACKAGE_GLOB="${IMAGE_BASENAME}.zst"
-  sudo sha256sum \
-    "$ARTIFACT_DIR/gaokun3_defconfig" \
-    "$ZST_FILE" \
-    | sudo tee "$SHA256_FILE" > /dev/null
+  (
+    cd "$ARTIFACT_DIR"
+    sudo sha256sum \
+      "gaokun3_defconfig" \
+      | sudo tee "$SHA256_FILE" > /dev/null
+  )
   cat > "$RELEASE_BODY_FILE" <<EOF
-Distribution: Fedora ${FEDORA_RELEASE} (Minimal GNOME)
-Kernel Tag: ${KERNEL_TAG}
-Kernel Release: ${KREL}
-Architecture: arm64
-Root Filesystem: Btrfs (@, @home)
-Bootloader: GRUB2 (BLS disabled, traditional grub.cfg)
-Image File: ${IMAGE_BASENAME}
-Compressed File: ${IMAGE_BASENAME}.zst
-Build Time (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+## Build Information
 
-SHA256:
+- Distribution: Fedora ${FEDORA_RELEASE} (Minimal GNOME)
+- Kernel Tag: ${KERNEL_TAG}
+- Kernel Release: ${KREL}
+- Architecture: arm64
+- Root Filesystem: Btrfs (@, @home)
+- Bootloader: GRUB2 (BLS disabled, traditional grub.cfg)
+- Image File: ${IMAGE_BASENAME}
+- Compressed File: ${IMAGE_BASENAME}.zst
+- Build Time (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+## Default Login
+
+- Username: user
+- Password: user
+
+## SHA256
+
+```text
 $(cat "$SHA256_FILE")
+```
 EOF
 else
   split -b "$IMAGE_CHUNK_SIZE" -d -a 3 \
     "$ZST_FILE" \
     "$ZST_FILE.part-"
   PACKAGE_GLOB="${IMAGE_BASENAME}.zst.part-*"
-  sudo sha256sum \
-    "$ARTIFACT_DIR/gaokun3_defconfig" \
-    "$ZST_FILE.part-"* \
-    | sudo tee "$SHA256_FILE" > /dev/null
+  (
+    cd "$ARTIFACT_DIR"
+    sudo sha256sum \
+      "${IMAGE_BASENAME}.zst.part-"* \
+      | sudo tee "$SHA256_FILE" > /dev/null
+  )
   cat > "$RELEASE_BODY_FILE" <<EOF
-Distribution: Fedora ${FEDORA_RELEASE} (Minimal GNOME)
-Kernel Tag: ${KERNEL_TAG}
-Kernel Release: ${KREL}
-Architecture: arm64
-Root Filesystem: Btrfs (@, @home)
-Bootloader: GRUB2 (BLS disabled, traditional grub.cfg)
-Image File: ${IMAGE_BASENAME}
-Compressed File: ${IMAGE_BASENAME}.zst
-Build Time (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+## Build Information
 
-Reassemble + Decompress:
+- Distribution: Fedora ${FEDORA_RELEASE} (Minimal GNOME)
+- Kernel Tag: ${KERNEL_TAG}
+- Kernel Release: ${KREL}
+- Architecture: arm64
+- Root Filesystem: Btrfs (@, @home)
+- Bootloader: GRUB2 (BLS disabled, traditional grub.cfg)
+- Image File: ${IMAGE_BASENAME}
+- Compressed File: ${IMAGE_BASENAME}.zst
+- Build Time (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+## Default Login
+
+- Username: user
+- Password: user
+
+## Reassemble And Decompress
+
+```bash
 cat ${IMAGE_BASENAME}.zst.part-* > ${IMAGE_BASENAME}.zst
 zstd -d ${IMAGE_BASENAME}.zst -o ${IMAGE_BASENAME}
+```
 
-SHA256:
+## SHA256
+
+```text
 $(cat "$SHA256_FILE")
+```
 EOF
 fi
 

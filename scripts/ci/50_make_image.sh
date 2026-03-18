@@ -70,6 +70,44 @@ mkdir -p /etc/sudoers.d
 echo "%wheel ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/wheel-nopasswd
 chmod 440 /etc/sudoers.d/wheel-nopasswd
 
+mkdir -p /home/user/.config
+cat > /home/user/.config/monitors.xml <<'EOF'
+<monitors version="2">
+    <configuration>
+        <layoutmode>logical</layoutmode>
+        <logicalmonitor>
+            <x>0</x>
+            <y>0</y>
+            <scale>1.6666666269302368</scale>
+            <primary>yes</primary>
+            <transform>
+                <rotation>right</rotation>
+                <flipped>no</flipped>
+            </transform>
+            <monitor>
+                <monitorspec>
+                    <connector>DSI-1</connector>
+                    <vendor>unknown</vendor>
+                    <product>unknown</product>
+                    <serial>unknown</serial>
+                </monitorspec>
+                <mode>
+                    <width>1600</width>
+                    <height>2560</height>
+                    <rate>59.694</rate>
+                </mode>
+            </monitor>
+        </logicalmonitor>
+    </configuration>
+</monitors>
+EOF
+chown user:user /home/user/.config/monitors.xml
+
+GDM_DIR="/var/lib/gdm/seat0/config"
+mkdir -p "$GDM_DIR"
+cp /home/user/.config/monitors.xml "$GDM_DIR/monitors.xml"
+chown gdm:gdm "$GDM_DIR/monitors.xml"
+
 systemctl enable gdm NetworkManager sshd huawei-touchpad.service || true
 
 mkdir -p /etc/modules-load.d
