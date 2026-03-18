@@ -64,14 +64,6 @@ jobs:
             gaokun3-ccache-${{ env.KERNEL_TAG }}-
             gaokun3-ccache-
 
-      - name: Restore dnf cache
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/dnf
-          key: gaokun3-fedora-${{ env.FEDORA_RELEASE }}-${{ hashFiles('scripts/ci/*.sh', 'tools/**', 'firmware-huawei-gaokun3_minimal/**') }}
-          restore-keys: |
-            gaokun3-fedora-${{ env.FEDORA_RELEASE }}-
-
       - name: Prepare build workspace
         run: |
           set -euxo pipefail
@@ -101,8 +93,6 @@ jobs:
           test -s "$FEDORA_KEY_FILE" || { echo "Failed to fetch Fedora GPG key from https://fedoraproject.org/fedora.gpg"; exit 1; }
 
           sudo dnf --installroot="$ROOTFS_DIR" --releasever="$FEDORA_RELEASE" --forcearch=aarch64 -y \
-            --setopt=cachedir=$HOME/.cache/dnf \
-            --setopt=keepcache=True \
             --setopt=reposdir=/dev/null \
             --setopt=fastestmirror=False \
             --setopt=deltarpm=False \
