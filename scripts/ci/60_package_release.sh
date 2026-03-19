@@ -22,12 +22,12 @@ if [ "$(stat -c '%s' "$ZST_FILE")" -lt "$SPLIT_THRESHOLD_BYTES" ]; then
   cat > "$RELEASE_BODY_FILE" <<EOF
 ## Build Information
 
-- Distribution: Fedora Linux ${FEDORA_RELEASE} (Minimal GNOME)
+- Distribution: Fedora Linux ${FEDORA_RELEASE} Workstation raw (customized)
 - Kernel Tag: ${KERNEL_TAG}
 - Kernel Release: ${KREL}
 - Architecture: arm64
-- Root Filesystem: Btrfs (@, @home)
-- Bootloader: GRUB2 (BLS disabled, traditional grub.cfg)
+- Root Filesystem: Fedora default Btrfs subvolumes (root, home, var)
+- Bootloader: GRUB2 with BLS entries
 - Image File: ${IMAGE_BASENAME}
 - Compressed File: ${IMAGE_BASENAME}.zst
 - Build Time (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -45,12 +45,12 @@ else
   cat > "$RELEASE_BODY_FILE" <<EOF
 ## Build Information
 
-- Distribution: Fedora ${FEDORA_RELEASE} (Minimal GNOME)
+- Distribution: Fedora Linux ${FEDORA_RELEASE} Workstation raw (customized)
 - Kernel Tag: ${KERNEL_TAG}
 - Kernel Release: ${KREL}
 - Architecture: arm64
-- Root Filesystem: Btrfs (@, @home)
-- Bootloader: GRUB2 (BLS disabled, traditional grub.cfg)
+- Root Filesystem: Fedora default Btrfs subvolumes (root, home, var)
+- Bootloader: GRUB2 with BLS entries
 - Image File: ${IMAGE_BASENAME}
 - Compressed File: ${IMAGE_BASENAME}.zst
 - Build Time (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")

@@ -7,7 +7,21 @@ Build scripts, patches, tools, and firmware for Linux images targeting the Huawe
 - `gaokun-patches/`: kernel patches and device support changes
 - `firmware/`: minimal firmware bundle used by the image build
 - `tools/`: device-specific helper scripts and service files
-- `scripts/ci/`: workflow build, image creation, and packaging scripts
+- `scripts/ci/`: workflow build, image customization, and packaging scripts
+
+## Build flow
+
+The current build flow starts from the Fedora Workstation raw image, downloads and decompresses it when needed, then customizes a copied working image in place:
+
+- build the patched kernel
+- fetch `https://download.fedoraproject.org/pub/fedora/linux/releases/test/44_Beta/Workstation/aarch64/images/Fedora-Workstation-Disk-44_Beta-1.2.aarch64.raw.xz` when the raw image is missing
+- copy `Fedora-Workstation-Disk-44_Beta-1.2.aarch64.raw` into the build directory
+- mount the existing Fedora partitions and Btrfs subvolumes
+- install the new kernel/modules
+- remove Fedora's stock kernel packages, old boot artifacts, and `linux-firmware`
+- copy the repository firmware bundle
+- regenerate initramfs, BLS entry, and GRUB config
+- package the resulting raw image
 
 ## Getting started
 

@@ -22,15 +22,15 @@ jobs:
       TZ: UTC
       FEDORA_RELEASE: ${{ github.event.inputs.fedora_release }}
       KERNEL_TAG: ${{ github.event.inputs.kernel_tag }}
-      IMAGE_SIZE: 12G
       IMAGE_CHUNK_SIZE: 1900M
       GAOKUN_DIR: ${{ github.workspace }}
       WORKDIR: ${{ github.workspace }}/build-fedora
       KERN_SRC: ${{ github.workspace }}/build-fedora/mainline-linux
       KERN_OUT: ${{ github.workspace }}/build-fedora/kernel-out
-      ROOTFS_DIR: ${{ github.workspace }}/build-fedora/rootfs
       ARTIFACT_DIR: ${{ github.workspace }}/build-fedora/artifacts
       FW_REPO: ${{ github.workspace }}/firmware
+      BASE_IMAGE_URL: https://download.fedoraproject.org/pub/fedora/linux/releases/test/44_Beta/Workstation/aarch64/images/Fedora-Workstation-Disk-44_Beta-1.2.aarch64.raw.xz
+      BASE_IMAGE_FILE: ${{ github.workspace }}/Fedora-Workstation-Disk-44_Beta-1.2.aarch64.raw
       IMAGE_FILE: ${{ github.workspace }}/build-fedora/fedora-${{ github.event.inputs.fedora_release }}-gaokun3.img
 
     steps:
@@ -53,7 +53,7 @@ jobs:
             git make bc bison flex cpio rsync kmod fakeroot \
             libssl-dev libelf-dev dwarves ccache \
             curl jq \
-            parted dosfstools e2fsprogs btrfs-progs zstd xz-utils python3
+            e2fsprogs btrfs-progs zstd xz-utils python3
 
       - name: Restore ccache
         uses: actions/cache@v5
@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euxo pipefail
           test -d "$FW_REPO"
-          mkdir -p "$WORKDIR" "$KERN_OUT" "$ROOTFS_DIR" "$ARTIFACT_DIR"
+          mkdir -p "$WORKDIR" "$KERN_OUT" "$ARTIFACT_DIR"
 
       - name: Apply patches and build kernel
         id: kernel
@@ -78,29 +78,16 @@ jobs:
           echo "KREL=$KREL" >> "$GITHUB_ENV"
           echo "kernel_release=$KREL" >> "$GITHUB_OUTPUT"
 
-      - name: Bootstrap Fedora rootfs
+      - name: Prepare Fedora Workstation raw image
         run: |
           set -euxo pipefail
-          sudo docker run --rm \
-            -v "$GITHUB_WORKSPACE":"$GITHUB_WORKSPACE" \
-            -w "$GITHUB_WORKSPACE" \
-            --user root \
-            "fedora:${FEDORA_RELEASE}" \
-            bash -euxo pipefail -c '
-              dnf -y --installroot="'"$ROOTFS_DIR"'" --releasever="'"$FEDORA_RELEASE"'" --forcearch=aarch64 --use-host-config \
-                --exclude=gnome-boxes,gnome-connections,gnome-browser-connector,snapshot,gnome-weather,gnome-contacts,gnome-maps,simple-scan,gnome-clocks,yelp,gnome-user-docs,gnome-calculator,gnome-calendar \
-                install \
-                @core @standard @gnome-desktop \
-                grub2-efi-aa64-modules efibootmgr shim-aa64 \
-                gnome-tweaks langpacks-zh_CN fcitx5-chinese-addons \
-                telnet mpv v4l-utils vim git htop fastfetch screen firefox
-            '
+          if [ ! -f "$BASE_IMAGE_FILE" ]; then
+            curl -L "$BASE_IMAGE_URL" -o "${BASE_IMAGE_FILE}.xz"
+            xz -d -T0 -f "${BASE_IMAGE_FILE}.xz"
+          fi
+          cp --reflink=auto "$BASE_IMAGE_FILE" "$IMAGE_FILE"
 
-      - name: Populate rootfs (kernel + firmware + tools)
-        run: |
-          scripts/ci/40_populate_rootfs.sh
-
-      - name: Create disk image and configure boot
+      - name: Customize local Fedora Workstation raw image
         run: |
           scripts/ci/50_make_image.sh
 

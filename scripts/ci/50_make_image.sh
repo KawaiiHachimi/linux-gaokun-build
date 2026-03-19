@@ -1,33 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+: "${GAOKUN_DIR:?missing GAOKUN_DIR}"
 : "${WORKDIR:?missing WORKDIR}"
-: "${ROOTFS_DIR:?missing ROOTFS_DIR}"
-: "${ARTIFACT_DIR:?missing ARTIFACT_DIR}"
+: "${KERN_SRC:?missing KERN_SRC}"
+: "${KERN_OUT:?missing KERN_OUT}"
 : "${IMAGE_FILE:?missing IMAGE_FILE}"
-: "${IMAGE_SIZE:?missing IMAGE_SIZE}"
 
 KREL="$(cat "$WORKDIR/kernel-release.txt")"
 
-truncate -s "$IMAGE_SIZE" "$IMAGE_FILE"
-parted -s "$IMAGE_FILE" mklabel gpt
-parted -s "$IMAGE_FILE" mkpart EFI fat32 1MiB 256MiB
-parted -s "$IMAGE_FILE" set 1 esp on
-parted -s "$IMAGE_FILE" mkpart rootfs btrfs 256MiB 100%
+if [[ ! -f "$IMAGE_FILE" ]]; then
+  echo "Image file not found: $IMAGE_FILE" >&2
+  exit 1
+fi
+
+if [[ "$(uname -m)" == "aarch64" ]]; then
+  CROSS_COMPILE=""
+else
+  CROSS_COMPILE="aarch64-linux-gnu-"
+fi
 
 LOOP="$(sudo losetup --show -fP "$IMAGE_FILE")"
-sudo mkfs.vfat -F32 -n EFI "${LOOP}p1"
-sudo mkfs.btrfs -f -L rootfs "${LOOP}p2"
-
-EFI_UUID="$(sudo blkid -s UUID -o value "${LOOP}p1")"
-ROOT_UUID="$(sudo blkid -s UUID -o value "${LOOP}p2")"
-
+EFI_PART="${LOOP}p1"
+BOOT_PART="${LOOP}p2"
+ROOT_PART="${LOOP}p3"
 MNT=/mnt/ego-fedora
+
 cleanup() {
   set +e
   sudo umount "$MNT/dev/pts" 2>/dev/null || true
   sudo umount "$MNT/boot/efi" 2>/dev/null || true
+  sudo umount "$MNT/boot" 2>/dev/null || true
   sudo umount "$MNT/home" 2>/dev/null || true
+  sudo umount "$MNT/var" 2>/dev/null || true
   sudo umount "$MNT/dev" 2>/dev/null || true
   sudo umount "$MNT/proc" 2>/dev/null || true
   sudo umount "$MNT/sys" 2>/dev/null || true
@@ -38,23 +43,17 @@ cleanup() {
 trap cleanup EXIT
 
 sudo mkdir -p "$MNT"
-sudo mount "${LOOP}p2" "$MNT"
-sudo btrfs subvolume create "$MNT/@"
-sudo btrfs subvolume create "$MNT/@home"
-sudo umount "$MNT"
-sudo mount -o subvol=@ "${LOOP}p2" "$MNT"
-sudo mkdir -p "$MNT/home"
-sudo mount -o subvol=@home "${LOOP}p2" "$MNT/home"
-sudo mkdir -p "$MNT/boot/efi"
-sudo mount "${LOOP}p1" "$MNT/boot/efi"
+if sudo mount -o subvol=root "$ROOT_PART" "$MNT" 2>/dev/null; then
+  sudo mkdir -p "$MNT/home" "$MNT/var"
+  sudo mount -o subvol=home "$ROOT_PART" "$MNT/home"
+  sudo mount -o subvol=var "$ROOT_PART" "$MNT/var"
+else
+  sudo mount "$ROOT_PART" "$MNT"
+fi
 
-sudo rsync -aHAX "$ROOTFS_DIR/" "$MNT/"
-
-sudo tee "$MNT/etc/fstab" >/dev/null <<EOF
-UUID=${ROOT_UUID}  /         btrfs  subvol=@,compress=zstd:1,ssd,noatime  0  0
-UUID=${ROOT_UUID}  /home     btrfs  subvol=@home,compress=zstd:1,ssd,noatime  0  0
-UUID=${EFI_UUID}   /boot/efi vfat   defaults,nofail,x-systemd.device-timeout=10s  0  2
-EOF
+sudo mkdir -p "$MNT/boot" "$MNT/boot/efi"
+sudo mount "$BOOT_PART" "$MNT/boot"
+sudo mount "$EFI_PART" "$MNT/boot/efi"
 
 sudo mount --bind /dev "$MNT/dev"
 sudo mount --bind /dev/pts "$MNT/dev/pts"
@@ -62,7 +61,29 @@ sudo mount -t proc proc "$MNT/proc"
 sudo mount -t sysfs sys "$MNT/sys"
 sudo mount -t tmpfs tmpfs "$MNT/run"
 
-sudo chroot "$MNT" /usr/bin/env KREL="$KREL" /bin/bash -euxo pipefail <<'CHROOT_EOF'
+sudo make -C "$KERN_SRC" O="$KERN_OUT" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
+  INSTALL_MOD_PATH="$MNT" modules_install
+sudo rm -f "$MNT/lib/modules/$KREL/build" "$MNT/lib/modules/$KREL/source"
+
+sudo cp "$KERN_OUT/arch/arm64/boot/Image" "$MNT/boot/vmlinuz-$KREL"
+sudo mkdir -p "$MNT/boot/dtb-$KREL/qcom"
+sudo cp "$KERN_OUT/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dtb" \
+  "$MNT/boot/dtb-$KREL/qcom/"
+
+test -d "$GAOKUN_DIR/firmware"
+sudo mkdir -p \
+  "$MNT/usr/local/bin" \
+  "$MNT/etc/systemd/system" \
+  "$MNT/usr/share/alsa/ucm2/Qualcomm/sc8280xp"
+sudo cp "$GAOKUN_DIR/tools/touchpad/huawei-tp-activate.py" "$MNT/usr/local/bin/"
+sudo cp "$GAOKUN_DIR/tools/touchpad/huawei-touchpad.service" "$MNT/etc/systemd/system/"
+sudo chmod +x "$MNT/usr/local/bin/huawei-tp-activate.py"
+sudo cp "$GAOKUN_DIR/tools/bluetooth/patch-nvm-bdaddr.py" "$MNT/usr/local/bin/"
+sudo chmod +x "$MNT/usr/local/bin/patch-nvm-bdaddr.py"
+sudo cp "$GAOKUN_DIR/tools/audio/sc8280xp.conf" \
+  "$MNT/usr/share/alsa/ucm2/Qualcomm/sc8280xp/"
+
+sudo chroot "$MNT" /usr/bin/env KREL="$KREL" /bin/bash -euxo pipefail <<'CHROOT_SETUP_EOF'
 echo "fedora" > /etc/hostname
 id -u user >/dev/null 2>&1 || useradd -m -s /bin/bash -G wheel user
 echo "user:user" | chpasswd
@@ -120,47 +141,56 @@ echo -e "huawei-gaokun-ec\nhuawei-gaokun-battery\nucsi_huawei_gaokun" > /etc/mod
 mkdir -p /etc/modprobe.d
 echo "softdep pinctrl_sc8280xp_lpass_lpi pre: lpasscc_sc8280xp" > /etc/modprobe.d/audio-deps.conf
 
-cat > /etc/dracut.conf.d/matebook.conf <<MODEOF
+mapfile -t STOCK_KERNEL_PKGS < <(rpm -qa | grep -E '^kernel(-(core|modules|modules-core|modules-extra|uki-virt|uki-virt-addons))?-[0-9]' || true)
+if (( ${#STOCK_KERNEL_PKGS[@]} > 0 )); then
+  dnf remove -y "${STOCK_KERNEL_PKGS[@]}" || rpm -e --nodeps "${STOCK_KERNEL_PKGS[@]}" || true
+fi
+
+if rpm -q linux-firmware >/dev/null 2>&1; then
+  dnf remove -y linux-firmware || rpm -e --nodeps linux-firmware || true
+fi
+
+find /boot -maxdepth 1 -type f \
+  \( -name 'vmlinuz-*' -o -name 'initramfs-*.img' -o -name 'System.map-*' -o -name 'config-*' -o -name '.vmlinuz-*.hmac' \) \
+  ! -name "vmlinuz-$KREL" \
+  -delete
+find /boot -maxdepth 1 -type d -name 'dtb-*' ! -name "dtb-$KREL" -exec rm -rf {} +
+find /lib/modules -mindepth 1 -maxdepth 1 -type d ! -name "$KREL" -exec rm -rf {} +
+rm -f /boot/loader/entries/*.conf
+
+rm -rf /lib/firmware/*
+mkdir -p /lib/firmware
+
+cat > /etc/dracut.conf.d/matebook.conf <<EOF
 hostonly="no"
 add_drivers+=" btrfs nvme phy-qcom-qmp-pcie phy-qcom-qmp-combo phy-qcom-qmp-usb phy-qcom-snps-femto-v2 usb-storage uas typec pci-pwrctrl-pwrseq ath11k ath11k_pci panel-himax-hx83121a msm i2c-hid-of lpasscc_sc8280xp snd-soc-sc8280xp pinctrl_sc8280xp_lpass_lpi "
-MODEOF
-
-dracut --force --kver "$KREL"
-
-cat > /etc/default/grub <<GRUBEOF
-GRUB_DEFAULT=saved
-GRUB_TIMEOUT=5
-GRUB_DISTRIBUTOR="Fedora"
-GRUB_ENABLE_BLSCFG=false
-GRUB_CMDLINE_LINUX="clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave modprobe.blacklist=simpledrm efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1"
-GRUB_DEFAULT_DTB="qcom/sc8280xp-huawei-gaokun3.dtb"
-GRUBEOF
-
-echo 'GRUB_DISABLE_OS_PROBER=true' >> /etc/default/grub
-grub2-install --target=arm64-efi --efi-directory=/boot/efi --boot-directory=/boot --removable --force
-grub2-mkconfig -o /boot/grub2/grub.cfg
-sed -i '/^GRUB_DISABLE_OS_PROBER=true$/d' /etc/default/grub
-
-ROOT_UUID="$(blkid -s UUID -o value /dev/disk/by-label/rootfs)"
-mkdir -p /boot/efi/EFI/BOOT /boot/efi/EFI/fedora
-cat > /boot/efi/EFI/BOOT/grub.cfg <<EOF
-search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
-if [ -f (\$root)/@/boot/grub2/grub.cfg ]; then
-    set prefix=(\$root)/@/boot/grub2
-    configfile (\$root)/@/boot/grub2/grub.cfg
-elif [ -f (\$root)/boot/grub2/grub.cfg ]; then
-    set prefix=(\$root)/boot/grub2
-    configfile (\$root)/boot/grub2/grub.cfg
-else
-    echo "ERROR: grub.cfg not found on rootfs UUID ${ROOT_UUID}"
-    echo "Tried: /@/boot/grub2/grub.cfg and /boot/grub2/grub.cfg"
-    sleep 5
-fi
 EOF
-cp /boot/efi/EFI/BOOT/grub.cfg /boot/efi/EFI/fedora/grub.cfg
+CHROOT_SETUP_EOF
 
-grep -n "devicetree" /boot/grub2/grub.cfg
-CHROOT_EOF
+sudo cp -r "$GAOKUN_DIR/firmware"/. "$MNT/lib/firmware/"
+
+sudo chroot "$MNT" /usr/bin/env KREL="$KREL" /bin/bash -euxo pipefail <<'CHROOT_BOOT_EOF'
+dracut --force "/boot/initramfs-$KREL.img" "$KREL"
+
+CURRENT_OPTIONS="rhgb quiet root=UUID=$(findmnt -no UUID /) rootflags=subvol=root"
+MACHINE_ID="$(cat /etc/machine-id)"
+mkdir -p /boot/loader/entries
+cat > "/boot/loader/entries/${MACHINE_ID}-${KREL}.conf" <<EOF
+title Fedora Linux (${KREL}) 44 (Workstation Edition) - gaokun3
+version ${KREL}
+linux /vmlinuz-${KREL}
+initrd /initramfs-${KREL}.img
+options ${CURRENT_OPTIONS} clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave modprobe.blacklist=simpledrm efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1
+devicetree /dtb-${KREL}/qcom/sc8280xp-huawei-gaokun3.dtb
+grub_users \$grub_users
+grub_arg --unrestricted
+grub_class fedora
+EOF
+
+grub2-mkconfig -o /boot/grub2/grub.cfg
+grub2-set-default 0 || true
+grep -n "sc8280xp-huawei-gaokun3.dtb" /boot/loader/entries/*.conf
+CHROOT_BOOT_EOF
 
 sync
 
