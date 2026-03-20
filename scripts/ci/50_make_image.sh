@@ -75,8 +75,8 @@ mkdir -p /etc/sudoers.d
 echo "%wheel ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/wheel-nopasswd
 chmod 440 /etc/sudoers.d/wheel-nopasswd
 cat > /etc/locale.conf <<'EOF'
-LANG=en_US.UTF-8
-LC_MESSAGES=en_US.UTF-8
+LANG=zh_CN.UTF-8
+LC_MESSAGES=zh_CN.UTF-8
 EOF
 
 mkdir -p /home/user/.config

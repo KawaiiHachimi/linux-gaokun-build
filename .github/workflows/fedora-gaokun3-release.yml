@@ -102,12 +102,14 @@ jobs:
             --user root \
             "fedora:${FEDORA_RELEASE}" \
             bash -euxo pipefail -c '
+              export LANG=zh_CN.UTF-8
               dnf -y --installroot="'"$ROOTFS_DIR"'" --releasever="'"$FEDORA_RELEASE"'" --forcearch=aarch64 --use-host-config \
                 --exclude="'"$EXCLUDED_PACKAGES"'" \
                 install \
                 @core @standard "'"$DESKTOP_ENVIRONMENT"'" \
-                grub2-efi-aa64-modules efibootmgr shim-aa64 \
-                langpacks-en langpacks-zh_CN alsa-ucm \
+                grub2-efi-aa64-modules efibootmgr shim-aa64 alsa-ucm \
+                langpacks-en langpacks-zh_CN ibus-typing-booster \
+                 i2c-tools alsa-utils pipewire-utils \
                 '"$EXTRA_PACKAGES"'
             '
 
