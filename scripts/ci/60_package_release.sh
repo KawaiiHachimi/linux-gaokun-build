@@ -45,6 +45,10 @@ if [ "$(stat -c '%s' "$ZST_FILE")" -lt "$SPLIT_THRESHOLD_BYTES" ]; then
 
 - Username: `user`
 - Password: `user`
+
+## Display Note
+
+- If the GDM login screen has incorrect rotation, primary display selection, or external monitor layout, first fix the display settings in the user session, then copy `~/.config/monitors.xml` to `/var/lib/gdm/seat0/config/monitors.xml` and run `chown --reference=/var/lib/gdm/seat0/config /var/lib/gdm/seat0/config/monitors.xml`.
 EOF
 else
   split -b "$IMAGE_CHUNK_SIZE" -d -a 3 \
@@ -74,6 +78,10 @@ else
 
 - Username: `user`
 - Password: `user`
+
+## Display Note
+
+- If the GDM login screen has incorrect rotation, primary display selection, or external monitor layout, first fix the display settings in the user session, then copy `~/.config/monitors.xml` to `/var/lib/gdm/seat0/config/monitors.xml` and run `chown --reference=/var/lib/gdm/seat0/config /var/lib/gdm/seat0/config/monitors.xml`.
 
 ## Reassemble And Decompress
 
