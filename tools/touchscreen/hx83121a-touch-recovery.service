@@ -8,7 +8,11 @@ ConditionPathExists=/sys/bus/i2c/devices/4-004f
 Type=oneshot
 ExecStart=/usr/local/bin/hx83121a-touch-recovery
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5
 TimeoutStartSec=30
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Install]
 WantedBy=multi-user.target

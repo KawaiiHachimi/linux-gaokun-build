@@ -11,7 +11,7 @@ Key findings:
 
 Deploy: /usr/local/bin/hx83121a-touch-recovery
 """
-import subprocess, struct, time, mmap, os, sys
+import subprocess, struct, time, mmap, os, sys, shutil
 
 TLMM_BASE = 0x0F100000
 I2C_BUS = 4
@@ -145,6 +145,10 @@ def main():
     if not os.path.exists(f"/sys/bus/i2c/devices/{HID_ADDR}"):
         log("I2C device not found, skipping")
         return 0
+
+    if not shutil.which("i2ctransfer"):
+        log("ERROR: i2ctransfer not found — install i2c-tools package")
+        return 1
 
     # Wait for panel driver to finish init (resets GPIO99 at ~3.9s, done by ~5s)
     # Poll dmesg instead of fixed sleep for faster start

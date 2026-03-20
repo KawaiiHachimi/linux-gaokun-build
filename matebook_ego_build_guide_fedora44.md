@@ -116,11 +116,11 @@ sudo dnf --installroot=$ROOTFS_DIR --releasever=44 --forcearch=aarch64 --use-hos
     --exclude=gnome-boxes,gnome-connections,gnome-browser-connector,snapshot,gnome-weather,gnome-contacts,gnome-maps,simple-scan,gnome-clocks,gnome-calculator,gnome-calendar \
     install \
     @core @standard @gnome-desktop \
-    grub2-efi-aa64-modules efibootmgr shim-aa64 \
-    gnome-tweaks \
-    langpacks-en langpacks-zh_CN alsa-ucm \
-    fcitx5-chinese-addons \
-    telnet mpv v4l-utils vim git htop fastfetch screen firefox
+    grub2-efi-aa64-modules efibootmgr shim-aa64 alsa-ucm \
+    langpacks-en langpacks-zh_CN \
+    google-noto-color-emoji-fonts google-noto-emoji-fonts \
+    i2c-tools alsa-utils pipewire-utils \
+    fcitx5-chinese-addons gnome-tweaks telnet mpv v4l-utils vim git htop fastfetch screen firefox
 ```
 
 安装内核、模块、固件和本地工具：
