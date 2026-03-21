@@ -103,13 +103,25 @@ jobs:
             "fedora:${FEDORA_RELEASE}" \
             bash -euxo pipefail -c '
               export LANG=zh_CN.UTF-8
+              mkdir -p "'"$ROOTFS_DIR"'/etc"
+
+              dnf -y --installroot="'"$ROOTFS_DIR"'" --releasever="'"$FEDORA_RELEASE"'" --forcearch=aarch64 --use-host-config \
+                install \
+                @core @standard \
+                grub2-efi-aa64-modules efibootmgr shim-aa64 alsa-ucm \
+                glibc-langpack-en glibc-langpack-zh \
+                langpacks-en langpacks-zh_CN ibus-typing-booster \
+                alsa-utils pipewire-utils
+
+              printf "%s\n" \
+                "LANG=zh_CN.UTF-8" \
+                "LC_MESSAGES=zh_CN.UTF-8" \
+                > "'"$ROOTFS_DIR"'/etc/locale.conf"
+
               dnf -y --installroot="'"$ROOTFS_DIR"'" --releasever="'"$FEDORA_RELEASE"'" --forcearch=aarch64 --use-host-config \
                 --exclude="'"$EXCLUDED_PACKAGES"'" \
                 install \
-                @core @standard "'"$DESKTOP_ENVIRONMENT"'" \
-                grub2-efi-aa64-modules efibootmgr shim-aa64 alsa-ucm \
-                langpacks-en langpacks-zh_CN ibus-typing-booster \
-                 i2c-tools alsa-utils pipewire-utils \
+                "'"$DESKTOP_ENVIRONMENT"'" \
                 '"$EXTRA_PACKAGES"'
             '
 
