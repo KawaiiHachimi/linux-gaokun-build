@@ -63,7 +63,8 @@ export IMAGE_FILE=$WORKDIR/fedora-44-gaokun3.img
 
 ## 第二步：编译内核
 
-应用项目内核补丁，并导入仓库内的 DTS 与 defconfig 后构建：
+应用项目内核补丁，并导入仓库内的 DTS 与 defconfig 后构建。
+当前触摸屏方案已经统一为内核内的 Himax HX83121A SPI 驱动，不再额外安装 DKMS，也不再依赖旧的 I2C 恢复脚本：
 
 ```bash
 cd $KERN_SRC
@@ -157,12 +158,6 @@ sudo cp $GAOKUN_DIR/tools/touchpad/huawei-tp-activate.py \
 sudo cp $GAOKUN_DIR/tools/touchpad/huawei-touchpad.service \
     $ROOTFS_DIR/etc/systemd/system/
 sudo chmod +x $ROOTFS_DIR/usr/local/bin/huawei-tp-activate.py
-
-sudo cp $GAOKUN_DIR/tools/touchscreen/hx83121a-touch-recovery \
-    $ROOTFS_DIR/usr/local/bin/
-sudo cp $GAOKUN_DIR/tools/touchscreen/hx83121a-touch-recovery.service \
-    $ROOTFS_DIR/etc/systemd/system/
-sudo chmod +x $ROOTFS_DIR/usr/local/bin/hx83121a-touch-recovery
 
 sudo cp $GAOKUN_DIR/tools/monitors/gdm-monitor-sync \
     $ROOTFS_DIR/usr/local/bin/
@@ -309,11 +304,12 @@ cat > /home/user/.config/monitors.xml <<EOF
 EOF
 chown user:user /home/user/.config/monitors.xml
 
-# 开启图形、网络、SSH、触控板、触摸屏恢复和首启显示同步服务
+# 开启图形、网络、SSH、触控板和首启显示同步服务
 systemctl enable gdm NetworkManager sshd huawei-touchpad.service \
-    hx83121a-touch-recovery.service gdm-monitor-sync.service
+    gdm-monitor-sync.service
 
 # 运行时与 dracut 都需要的关键模块
+# 触摸屏驱动会由设备树自动匹配加载，无需额外写入 modules-load.d
 mkdir -p /etc/modules-load.d
 echo -e "pci-pwrctrl-pwrseq\nath11k_pci" > /etc/modules-load.d/wifi.conf
 echo "btqca" > /etc/modules-load.d/bluetooth.conf
@@ -406,6 +402,7 @@ sudo dd if=$IMAGE_FILE of=/dev/sdX bs=4M status=progress conv=fsync
 
 ## 额外说明
 
+- 编译完成后可用 `grep CONFIG_TOUCHSCREEN_HIMAX_HX83121A_SPI $KERN_OUT/.config` 确认 SPI 触摸驱动已进入当前内核配置
 - 首次启动后如需扩容，可使用 `gnome-disks`，或执行 `btrfs filesystem resize max /`
 - 文中所有 `tools/` 与 firmware 都来自当前仓库，不依赖外部设备专属仓库
 - 如果你需要自动化构建，可直接参考 GitHub Actions workflow：`.github/workflows/fedora-gaokun3-release.yml`

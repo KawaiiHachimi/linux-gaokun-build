@@ -113,7 +113,7 @@ EOF
 chown user:user /home/user/.config/monitors.xml
 
 systemctl enable gdm NetworkManager sshd huawei-touchpad.service \
-  hx83121a-touch-recovery.service gdm-monitor-sync.service || true
+  gdm-monitor-sync.service || true
 
 mkdir -p /etc/modules-load.d
 echo -e "pci-pwrctrl-pwrseq\nath11k_pci" > /etc/modules-load.d/wifi.conf
