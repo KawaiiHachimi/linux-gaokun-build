@@ -9,7 +9,7 @@ SENTINEL="/var/lib/gdm/.gaokun-monitors-synced"
 [[ -f "$SRC_MONITORS" ]] || exit 0
 [[ ! -e "$SENTINEL" ]] || exit 0
 
-for _ in $(seq 1 120); do
+for _ in $(seq 1 30); do
   if [[ -d "$GDM_DIR" ]]; then
     cp "$SRC_MONITORS" "$DST_MONITORS"
     chown --reference="$GDM_DIR" "$DST_MONITORS"
@@ -18,7 +18,7 @@ for _ in $(seq 1 120); do
     systemctl try-restart gdm.service || true
     exit 0
   fi
-  sleep 0.5
+  sleep 1
 done
 
 exit 0

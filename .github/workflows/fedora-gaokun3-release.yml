@@ -10,7 +10,7 @@ on:
       kernel_tag:
         description: Linux kernel tag
         required: true
-        default: "v7.0-rc4"
+        default: "v7.0-rc5"
       desktop_environment:
         description: Desktop environment package group (single package or group)
         required: true
@@ -102,29 +102,18 @@ jobs:
             --user root \
             "fedora:${FEDORA_RELEASE}" \
             bash -euxo pipefail -c '
-              dnf -y install glibc-langpack-en glibc-langpack-zh
-              export LANG=zh_CN.UTF-8
-              export LC_ALL=zh_CN.UTF-8
-              export LANGUAGE=zh_CN:zh
+              echo "%_install_langs all" > /etc/rpm/macros.image-language-conf
+              sed -i "/tsflags=nodocs/d" /etc/dnf/dnf.conf
+
               mkdir -p "'"$ROOTFS_DIR"'/etc"
-
-              dnf -y --installroot="'"$ROOTFS_DIR"'" --releasever="'"$FEDORA_RELEASE"'" --forcearch=aarch64 --use-host-config \
-                install \
-                @core @standard \
-                grub2-efi-aa64-modules efibootmgr shim-aa64 alsa-ucm \
-                glibc-langpack-en glibc-langpack-zh \
-                langpacks-en langpacks-zh_CN ibus-typing-booster \
-                alsa-utils pipewire-utils
-
-              printf "%s\n" \
-                "LANG=zh_CN.UTF-8" \
-                "LC_MESSAGES=zh_CN.UTF-8" \
-                > "'"$ROOTFS_DIR"'/etc/locale.conf"
 
               dnf -y --installroot="'"$ROOTFS_DIR"'" --releasever="'"$FEDORA_RELEASE"'" --forcearch=aarch64 --use-host-config \
                 --exclude="'"$EXCLUDED_PACKAGES"'" \
                 install \
-                "'"$DESKTOP_ENVIRONMENT"'" \
+                @core @standard "'"$DESKTOP_ENVIRONMENT"'" \
+                grub2-efi-aa64-modules efibootmgr shim-aa64 alsa-ucm \
+                langpacks-en langpacks-zh_CN \
+                alsa-utils pipewire-utils \
                 '"$EXTRA_PACKAGES"'
             '
 
