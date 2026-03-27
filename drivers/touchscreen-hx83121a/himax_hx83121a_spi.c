@@ -19,9 +19,11 @@
 #include <linux/limits.h>
 #include <linux/mutex.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/spi/spi.h>
 #include <linux/math.h>
-#include <linux/workqueue.h>
+
+#include <drm/drm_panel.h>
 
 #define HIMAX_BUS_RETRY					3
 /* SPI bus read header length */
@@ -91,13 +93,8 @@ HIMAX_MAX_TX + HIMAX_MAX_RX) * 2)
 
 /* SPI CS setup time */
 #define HIMAX_SPI_CS_SETUP_TIME				300
-#define HIMAX_BOOT_REINIT_RETRIES			6
-#define HIMAX_BOOT_REINIT_DELAY_MS			500
-#define HIMAX_BOOT_LATE_REINIT_DELAY_MS			3000
-#define HIMAX_OPEN_REINIT_DELAY_MS			1000
-#define HIMAX_RESUME_REINIT_RETRIES			10
-#define HIMAX_RESUME_REINIT_DELAY_MS			300
-#define HIMAX_RESUME_REINIT_INITIAL_DELAY_MS		3000
+#define HIMAX_PANEL_REINIT_RETRIES			3
+#define HIMAX_PANEL_REINIT_DELAY_MS			50
 /* HIMAX SPI function select, 1st byte of any SPI command sequence */
 #define HIMAX_SPI_FUNCTION_READ				0xf3
 #define HIMAX_SPI_FUNCTION_WRITE			0xf2
@@ -124,10 +121,9 @@ struct himax_ts_data {
 	struct spi_device *spi;
 	struct input_dev *input_dev;
 	struct touchscreen_properties props;
-	struct delayed_work reinit_work;
+	struct drm_panel_follower panel_follower;
 	u8 touch_start_frames;
 	bool touch_active;
-	bool reinit_on_open;
 	struct himax_track {
 		bool active;
 		u8 seen;
@@ -138,12 +134,11 @@ struct himax_ts_data {
 };
 
 static void himax_report_tracked_state(struct himax_ts_data *ts, bool report_on);
-static int himax_input_open(struct input_dev *dev);
-static void himax_input_close(struct input_dev *dev);
 static int himax_disable_fw_reload(struct himax_ts_data *ts);
 static int himax_mcu_power_on_init(struct himax_ts_data *ts);
 static int himax_mcu_check_crc(struct himax_ts_data *ts, u32 start_addr,
 			       int reload_length, u32 *crc_result);
+static int himax_wait_for_panel(struct device *dev);
 
 /*
  * 1st byte is the spi function select, 2nd byte is the command belong to the
@@ -590,8 +585,6 @@ static int himax_input_dev_config(struct himax_ts_data *ts)
 
 	ts->input_dev = input_dev;
 	input_set_drvdata(input_dev, ts);
-	input_dev->open = himax_input_open;
-	input_dev->close = himax_input_close;
 
 	input_dev->name = "Himax Capacitive TouchScreen";
 	input_dev->phys = "input/ts";
@@ -615,32 +608,6 @@ static int himax_input_dev_config(struct himax_ts_data *ts)
 		return ret;
 
 	return 0;
-}
-
-static int himax_input_open(struct input_dev *dev)
-{
-	struct himax_ts_data *ts = input_get_drvdata(dev);
-
-	if (!ts->reinit_on_open)
-		return 0;
-
-	ts->reinit_on_open = false;
-	mod_delayed_work(system_wq, &ts->reinit_work,
-			 msecs_to_jiffies(HIMAX_OPEN_REINIT_DELAY_MS));
-
-	return 0;
-}
-
-static void himax_input_close(struct input_dev *dev)
-{
-	struct himax_ts_data *ts = input_get_drvdata(dev);
-
-	/*
-	 * Greeter/session handoff closes and reopens the input node under a
-	 * new userspace stack. Queue a fresh controller reinit for the next
-	 * opener so logout does not require a manual module reload.
-	 */
-	ts->reinit_on_open = true;
 }
 
 static void himax_release_all_touches(struct himax_ts_data *ts)
@@ -688,7 +655,8 @@ static int himax_hw_reinit(struct himax_ts_data *ts, bool check_crc)
 		dev_err(ts->dev, "%s: power-on init failed\n", __func__);
 
 out_enable_irq:
-	himax_int_enable(ts, true);
+	if (!ret)
+		himax_int_enable(ts, true);
 	return ret;
 }
 
@@ -716,18 +684,41 @@ static int himax_hw_reinit_retry(struct himax_ts_data *ts, bool check_crc,
 	return ret;
 }
 
-static void himax_reinit_work(struct work_struct *work)
+static void himax_power_down(struct himax_ts_data *ts)
 {
-	struct himax_ts_data *ts = container_of(to_delayed_work(work),
-						struct himax_ts_data, reinit_work);
+	himax_int_enable(ts, false);
+	himax_release_all_touches(ts);
+	gpiod_set_value_cansleep(ts->gpiod_rst, 1);
+}
+
+static int himax_panel_prepared(struct drm_panel_follower *follower)
+{
+	struct himax_ts_data *ts = container_of(follower, struct himax_ts_data,
+						panel_follower);
+	int ret;
 
 	mutex_lock(&ts->op_lock);
-	dev_info(ts->dev, "running deferred controller reinit\n");
-	himax_hw_reinit_retry(ts, false,
-			      HIMAX_RESUME_REINIT_RETRIES,
-			      HIMAX_RESUME_REINIT_DELAY_MS,
-			      "late");
+	ret = himax_hw_reinit_retry(ts, false,
+				    HIMAX_PANEL_REINIT_RETRIES,
+				    HIMAX_PANEL_REINIT_DELAY_MS,
+				    "panel");
+	if (ret)
+		himax_power_down(ts);
 	mutex_unlock(&ts->op_lock);
+
+	return ret;
+}
+
+static int himax_panel_unpreparing(struct drm_panel_follower *follower)
+{
+	struct himax_ts_data *ts = container_of(follower, struct himax_ts_data,
+						panel_follower);
+
+	mutex_lock(&ts->op_lock);
+	himax_power_down(ts);
+	mutex_unlock(&ts->op_lock);
+
+	return 0;
 }
 
 static ssize_t inplace_reset_store(struct device *dev,
@@ -745,7 +736,6 @@ static ssize_t inplace_reset_store(struct device *dev,
 	if (!do_reset)
 		return count;
 
-	cancel_delayed_work_sync(&ts->reinit_work);
 	mutex_lock(&ts->op_lock);
 	ret = himax_hw_reinit(ts, false);
 	mutex_unlock(&ts->op_lock);
@@ -756,6 +746,39 @@ static ssize_t inplace_reset_store(struct device *dev,
 }
 
 static DEVICE_ATTR_WO(inplace_reset);
+
+static const struct drm_panel_follower_funcs himax_panel_follower_funcs = {
+	.panel_prepared = himax_panel_prepared,
+	.panel_unpreparing = himax_panel_unpreparing,
+};
+
+static int himax_wait_for_panel(struct device *dev)
+{
+	struct device_node *panel_np;
+	struct drm_panel *panel;
+	int ret;
+
+	panel_np = of_parse_phandle(dev->of_node, "panel", 0);
+	if (!panel_np)
+		return -ENODEV;
+
+	panel = of_drm_find_panel(panel_np);
+	of_node_put(panel_np);
+	if (IS_ERR(panel)) {
+		ret = PTR_ERR(panel);
+		/*
+		 * The panel node exists in DT, but its DRM device can still show
+		 * up after the SPI touchscreen. Treat that as a deferred probe so
+		 * the core retries once the panel driver registers.
+		 */
+		if (ret == -ENODEV)
+			ret = -EPROBE_DEFER;
+		return ret;
+	}
+
+	drm_panel_put(panel);
+	return 0;
+}
 
 /* -------------------------------------------------------------------------- */
 /* 中断处理 */
@@ -783,14 +806,30 @@ static int hx83121a_gaokun_read_event_stack(struct himax_ts_data *ts)
 }
 
 #define EQUILIBRIUM	0x8000
-#define THRESHOLD	0xa0 /* casual, 拉高有助于防止乱跳, 代价是灵敏度降低 */
+#define THRESHOLD	0xb0 /* casual, 拉高有助于防止乱跳, 代价是灵敏度降低 */
 #define HIMAX_PEAK_MIN	0x160
 #define HIMAX_PEAK_QUALITY_MIN	0x300
 #define HIMAX_TOUCH_START_DEBOUNCE	2
 #define HIMAX_NEW_TOUCH_DEBOUNCE	2
+/*
+ * Maximum squared XY distance allowed when matching a new detection to an
+ * existing slot. A smaller value reduces close-finger slot swaps, but if it is
+ * too small, fast motion can break tracking and create brief lift/re-touch
+ * behavior.
+ */
 #define HIMAX_TRACK_MATCH_DIST2	(420 * 420)
-#define HIMAX_TRACK_LOST_FRAMES	2
-#define HIMAX_TOUCH_SEPARATION_GRID	5
+/*
+ * Number of consecutive frames we keep a slot alive after its peak disappears.
+ * Raising this masks short detection dropouts, while lowering it makes slot
+ * release more eager.
+ */
+#define HIMAX_TRACK_LOST_FRAMES	3
+/*
+ * Minimum separation in the raw RX/TX grid before two local peaks are treated
+ * as distinct touches. Raising this merges nearby fingers more aggressively;
+ * lowering it helps close-finger separation but can create duplicates.
+ */
+#define HIMAX_TOUCH_SEPARATION_GRID	2
 static u16 simple_filter(int val)
 {
 	/* 触控区貌似只会大于 EQUILIBRIUM, 如果是稳定的数据, 只会出现 0x8000 和 0x8000+ */
@@ -969,6 +1008,12 @@ static inline int himax_dist2(const struct input_mt_pos *a,
 	return dx * dx + dy * dy;
 }
 
+struct himax_match_candidate {
+	u8 track_idx;
+	u8 det_idx;
+	int dist2;
+};
+
 static void himax_reset_track(struct himax_track *trk)
 {
 	memset(trk, 0, sizeof(*trk));
@@ -979,53 +1024,96 @@ static void himax_track_contacts(struct himax_ts_data *ts,
 				 int det_cnt)
 {
 	bool det_used[HIMAX_MAX_TOUCH] = { false };
-	int i, j;
+	bool track_matched[HIMAX_MAX_TOUCH] = { false };
+	struct himax_match_candidate cand[HIMAX_MAX_TOUCH * HIMAX_MAX_TOUCH];
+	int cand_cnt = 0;
+	int i, j, k;
 
+	/*
+	 * Match globally by shortest distance first so close contacts are less
+	 * likely to swap just because a lower-numbered slot was processed first.
+	 */
 	for (i = 0; i < HIMAX_MAX_TOUCH; i++) {
 		struct himax_track *trk = &ts->tracks[i];
-		int best_det = -1;
-		int best_dist2 = INT_MAX;
 
 		if (!trk->active)
 			continue;
 
 		for (j = 0; j < det_cnt; j++) {
-			int d2;
+			int d2 = himax_dist2(&det[j], trk);
 
-			if (det_used[j])
+			if (d2 > HIMAX_TRACK_MATCH_DIST2)
 				continue;
 
-			d2 = himax_dist2(&det[j], trk);
-			if (d2 < best_dist2) {
-				best_dist2 = d2;
-				best_det = j;
-			}
+			cand[cand_cnt].track_idx = i;
+			cand[cand_cnt].det_idx = j;
+			cand[cand_cnt].dist2 = d2;
+			cand_cnt++;
+		}
+	}
+
+	for (i = 0; i < cand_cnt; i++) {
+		int best = i;
+
+		for (j = i + 1; j < cand_cnt; j++) {
+			if (cand[j].dist2 < cand[best].dist2 ||
+			    (cand[j].dist2 == cand[best].dist2 &&
+			     cand[j].track_idx < cand[best].track_idx) ||
+			    (cand[j].dist2 == cand[best].dist2 &&
+			     cand[j].track_idx == cand[best].track_idx &&
+			     cand[j].det_idx < cand[best].det_idx))
+				best = j;
 		}
 
-		if (best_det >= 0 && best_dist2 <= HIMAX_TRACK_MATCH_DIST2) {
-			/* Mild temporal smoothing to reduce noisy point jitter. */
-			trk->x = (trk->x * 3 + det[best_det].x) / 4;
-			trk->y = (trk->y * 3 + det[best_det].y) / 4;
-			trk->missed = 0;
-			if (trk->seen < U8_MAX)
-				trk->seen++;
-			det_used[best_det] = true;
-		} else {
-			/*
-			 * A candidate touch must be observed on consecutive
-			 * frames before it is allowed to start a new contact.
-			 * This drops short idle noise bursts before they can be
-			 * promoted into a reported touch.
-			 */
-			if (!ts->touch_active) {
-				himax_reset_track(trk);
-				continue;
-			}
+		if (best != i)
+			swap(cand[i], cand[best]);
+	}
 
-			trk->missed++;
-			if (trk->missed > HIMAX_TRACK_LOST_FRAMES)
-				himax_reset_track(trk);
+	for (k = 0; k < cand_cnt; k++) {
+		struct himax_match_candidate *match = &cand[k];
+		struct himax_track *trk;
+
+		if (track_matched[match->track_idx] || det_used[match->det_idx])
+			continue;
+
+		trk = &ts->tracks[match->track_idx];
+		if (!trk->active)
+			continue;
+
+		/* Mild temporal smoothing to reduce noisy point jitter. */
+		trk->x = (trk->x * 3 + det[match->det_idx].x) / 4;
+		trk->y = (trk->y * 3 + det[match->det_idx].y) / 4;
+		trk->missed = 0;
+		if (trk->seen < U8_MAX)
+			trk->seen++;
+
+		track_matched[match->track_idx] = true;
+		det_used[match->det_idx] = true;
+	}
+
+	for (i = 0; i < HIMAX_MAX_TOUCH; i++) {
+		struct himax_track *trk = &ts->tracks[i];
+
+		if (!trk->active)
+			continue;
+
+		if (track_matched[i])
+			continue;
+
+		/*
+		 * A candidate touch must be observed on consecutive
+		 * frames before it is allowed to start a new contact.
+		 * This drops short idle noise bursts before they can be
+		 * promoted into a reported touch.
+		 */
+		if (!ts->touch_active) {
+			himax_reset_track(trk);
+			continue;
 		}
+
+		trk->missed++;
+		if (trk->missed > HIMAX_TRACK_LOST_FRAMES)
+			himax_reset_track(trk);
 	}
 
 	for (j = 0; j < det_cnt; j++) {
@@ -1369,7 +1457,6 @@ static int himax_spi_probe(struct spi_device *spi)
 
 	spin_lock_init(&ts->irq_lock);
 	mutex_init(&ts->op_lock);
-	INIT_DELAYED_WORK(&ts->reinit_work, himax_reinit_work);
 	dev_set_drvdata(&spi->dev, ts);
 	spi_set_drvdata(spi, ts);
 
@@ -1380,20 +1467,13 @@ static int himax_spi_probe(struct spi_device *spi)
 	}
 
 	ret = devm_request_threaded_irq(ts->dev, ts->spi->irq, NULL,
-					himax_ts_thread, IRQF_ONESHOT,
+					himax_ts_thread,
+					IRQF_ONESHOT | IRQF_NO_AUTOEN,
 					"himax-spi-ts", ts);
 	if (ret) {
 		dev_err(ts->dev, "request irq failed. ret=%d\n", ret);
 		return ret;
 	}
-	ts->irq_enabled = true;
-
-	ret = himax_hw_reinit_retry(ts, true,
-				    HIMAX_BOOT_REINIT_RETRIES,
-				    HIMAX_BOOT_REINIT_DELAY_MS,
-				    "boot");
-	if (ret)
-		return ret;
 
 	ret = device_create_file(ts->dev, &dev_attr_inplace_reset);
 	if (ret) {
@@ -1401,31 +1481,19 @@ static int himax_spi_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	mod_delayed_work(system_wq, &ts->reinit_work,
-			 msecs_to_jiffies(HIMAX_BOOT_LATE_REINIT_DELAY_MS));
+	ret = himax_wait_for_panel(ts->dev);
+	if (ret) {
+		device_remove_file(ts->dev, &dev_attr_inplace_reset);
+		return dev_err_probe(ts->dev, ret, "panel is not ready yet\n");
+	}
 
-	return 0;
-}
-
-static int himax_spi_suspend(struct device *dev)
-{
-	struct himax_ts_data *ts = dev_get_drvdata(dev);
-
-	cancel_delayed_work_sync(&ts->reinit_work);
-	mutex_lock(&ts->op_lock);
-	himax_int_enable(ts, false);
-	himax_release_all_touches(ts);
-	mutex_unlock(&ts->op_lock);
-
-	return 0;
-}
-
-static int himax_spi_resume(struct device *dev)
-{
-	struct himax_ts_data *ts = dev_get_drvdata(dev);
-
-	mod_delayed_work(system_wq, &ts->reinit_work,
-			 msecs_to_jiffies(HIMAX_RESUME_REINIT_INITIAL_DELAY_MS));
+	ts->panel_follower.funcs = &himax_panel_follower_funcs;
+	ret = devm_drm_panel_add_follower(ts->dev, &ts->panel_follower);
+	if (ret) {
+		device_remove_file(ts->dev, &dev_attr_inplace_reset);
+		return dev_err_probe(ts->dev, ret,
+				     "failed to register panel follower\n");
+	}
 
 	return 0;
 }
@@ -1434,20 +1502,19 @@ static void himax_spi_remove(struct spi_device *spi)
 {
 	struct himax_ts_data *ts = spi_get_drvdata(spi);
 
-	cancel_delayed_work_sync(&ts->reinit_work);
 	device_remove_file(ts->dev, &dev_attr_inplace_reset);
+	himax_power_down(ts);
 }
 
-static DEFINE_SIMPLE_DEV_PM_OPS(himax_spi_pm_ops,
-				himax_spi_suspend, himax_spi_resume);
-
 static const struct spi_device_id himax_spi_ids[] = {
+	{ .name = "hx83121a-ts" },
 	{ .name = "hx83121a" },
 	{ },
 };
 MODULE_DEVICE_TABLE(spi, himax_spi_ids);
 
 static const struct of_device_id himax_spi_of_match[] = {
+	{ .compatible = "himax,hx83121a-ts" },
 	{ .compatible = "himax,hx83121a" },
 	{ }
 };
@@ -1457,7 +1524,6 @@ static struct spi_driver himax_spi_driver = {
 	.driver = {
 		.name = "himax-spi",
 		.of_match_table = himax_spi_of_match,
-		.pm = pm_sleep_ptr(&himax_spi_pm_ops),
 	},
 	.probe = himax_spi_probe,
 	.remove = himax_spi_remove,

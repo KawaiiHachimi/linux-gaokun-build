@@ -609,7 +609,7 @@
 	};
 };
 
-
+/*
 &i2c4 {
 	clock-frequency = <1000000>;
 
@@ -618,8 +618,25 @@
 
 	status = "okay";
 
+	touchscreen@4f {
+		compatible = "hid-over-i2c";
+		reg = <0x4f>;
 
+		hid-descr-addr = <0x1>;
+		interrupts-extended = <&tlmm 175 IRQ_TYPE_LEVEL_LOW>;
+		reset-gpios = <&tlmm 99 GPIO_ACTIVE_LOW>;
+
+		panel = <&panel>;
+		post-reset-deassert-delay-ms = <150>;
+
+		vdd-supply = <&vreg_misc_3p3>;
+		vddl-supply = <&vreg_hid>;
+
+		pinctrl-0 = <&ts0_default>;
+		pinctrl-names = "default";
+	};
 };
+*/
 &spi6 {
 	pinctrl-0 = <&spi6_default>;
 	pinctrl-names = "default";
@@ -627,11 +644,13 @@
 	status = "okay";
 
 	touchscreen@0 {
-		compatible = "himax,hx83121a";
+		compatible = "himax,hx83121a-ts";
 		reg = <0>;
 
+		// TODO: power supply, always on rencently
 		interrupts-extended = <&tlmm 175 IRQ_TYPE_LEVEL_LOW>;
 		reset-gpios = <&tlmm 99 GPIO_ACTIVE_LOW>;
+		panel = <&panel>;
 
 		spi-max-frequency = <12000000>;
 
@@ -645,6 +664,7 @@
 		pinctrl-names = "default";
 	};
 };
+
 &i2c15 {
 	clock-frequency = <400000>;
 

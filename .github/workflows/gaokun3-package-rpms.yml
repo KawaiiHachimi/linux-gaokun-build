@@ -89,7 +89,7 @@ jobs:
           git -C "$KERN_SRC" am "$GAOKUN_DIR"/patches/*.patch
 
           unset KCONFIG_CONFIG
-          make -C "$KERN_SRC" O="$KERN_OUT" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" defconfig
+          make -C "$KERN_SRC" O="$KERN_OUT" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" gaokun_defconfig
           make -C "$KERN_SRC" O="$KERN_OUT" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" olddefconfig
           make -C "$KERN_SRC" O="$KERN_OUT" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" -j"$(nproc)"
           make -C "$KERN_SRC" O="$KERN_OUT" ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" modules_prepare

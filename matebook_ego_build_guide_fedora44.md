@@ -74,8 +74,8 @@ git am $GAOKUN_DIR/patches/*.patch
 
 mkdir -p $KERN_OUT
 
-# 根据 patch 后的 defconfig 生成配置，再补齐新内核默认选项
-make O=$KERN_OUT ARCH=arm64 defconfig
+# 根据 patch 后的 gaokun_defconfig 生成配置，再补齐新内核默认选项
+make O=$KERN_OUT ARCH=arm64 gaokun_defconfig
 make O=$KERN_OUT ARCH=arm64 olddefconfig
 make O=$KERN_OUT ARCH=arm64 -j$(nproc)
 
