@@ -27,3 +27,4 @@ The image pipeline now builds and installs a dedicated RPM set:
 - [right-0903/linux-gaokun](https://github.com/right-0903/linux-gaokun)
 - [whitelewi1-ctrl/matebook-e-go-linux](https://github.com/whitelewi1-ctrl/matebook-e-go-linux)
 - [gaokun on AUR](https://aur.archlinux.org/packages?O=0&K=gaokun)
+- [TheUnknownThing/linux-gaokun](https://github.com/TheUnknownThing/linux-gaokun)
