@@ -12,12 +12,12 @@ set -euo pipefail
 KREL="$(cat "$WORKDIR/kernel-release.txt")"
 RPM_TOPDIR="$WORKDIR/rpmbuild"
 BUILDROOT_DIR="$WORKDIR/package-buildroots"
-KERNEL_STAGE="$BUILDROOT_DIR/kernel-gaokun"
-MODULES_STAGE="$BUILDROOT_DIR/kernel-modules-gaokun"
+KERNEL_STAGE="$BUILDROOT_DIR/kernel-gaokun3"
+MODULES_STAGE="$BUILDROOT_DIR/kernel-modules-gaokun3"
 MODULES_RAW_STAGE="$BUILDROOT_DIR/kernel-modules-raw"
-DEVEL_STAGE="$BUILDROOT_DIR/kernel-devel-gaokun"
+DEVEL_STAGE="$BUILDROOT_DIR/kernel-devel-gaokun3"
 DEVEL_TREE="$DEVEL_STAGE/usr/src/kernels/$KREL"
-FIRMWARE_STAGE="$BUILDROOT_DIR/linux-firmware-gaokun"
+FIRMWARE_STAGE="$BUILDROOT_DIR/linux-firmware-gaokun3"
 KREL_VERSION="${KREL//-/_}"
 RPM_BUILD_JOBS="${RPM_BUILD_JOBS:-$(nproc)}"
 RPM_PAYLOAD_LEVEL="${RPM_PAYLOAD_LEVEL:-2}"
@@ -106,23 +106,23 @@ prepare_modules_package
 prepare_kernel_devel_package
 prepare_firmware_package
 
-prepare_tarball "kernel-gaokun.tar.gz" "$KERNEL_STAGE"
-prepare_tarball "kernel-modules-gaokun.tar.gz" "$MODULES_STAGE"
-prepare_tarball "kernel-devel-gaokun.tar.gz" "$DEVEL_STAGE"
-prepare_tarball "linux-firmware-gaokun.tar.gz" "$FIRMWARE_STAGE"
+prepare_tarball "kernel-gaokun3.tar.gz" "$KERNEL_STAGE"
+prepare_tarball "kernel-modules-gaokun3.tar.gz" "$MODULES_STAGE"
+prepare_tarball "kernel-devel-gaokun3.tar.gz" "$DEVEL_STAGE"
+prepare_tarball "linux-firmware-gaokun3.tar.gz" "$FIRMWARE_STAGE"
 
 render_spec_template \
-  "$GAOKUN_DIR/packaging/kernel-gaokun.spec.in" \
-  "$RPM_TOPDIR/SPECS/kernel-gaokun.spec"
+  "$GAOKUN_DIR/packaging/kernel-gaokun3.spec.in" \
+  "$RPM_TOPDIR/SPECS/kernel-gaokun3.spec"
 render_spec_template \
-  "$GAOKUN_DIR/packaging/kernel-modules-gaokun.spec.in" \
-  "$RPM_TOPDIR/SPECS/kernel-modules-gaokun.spec"
+  "$GAOKUN_DIR/packaging/kernel-modules-gaokun3.spec.in" \
+  "$RPM_TOPDIR/SPECS/kernel-modules-gaokun3.spec"
 render_spec_template \
-  "$GAOKUN_DIR/packaging/kernel-devel-gaokun.spec.in" \
-  "$RPM_TOPDIR/SPECS/kernel-devel-gaokun.spec"
+  "$GAOKUN_DIR/packaging/kernel-devel-gaokun3.spec.in" \
+  "$RPM_TOPDIR/SPECS/kernel-devel-gaokun3.spec"
 render_spec_template \
-  "$GAOKUN_DIR/firmware/linux-firmware-gaokun.spec.in" \
-  "$RPM_TOPDIR/SPECS/linux-firmware-gaokun.spec"
+  "$GAOKUN_DIR/firmware/linux-firmware-gaokun3.spec.in" \
+  "$RPM_TOPDIR/SPECS/linux-firmware-gaokun3.spec"
 
 rpmbuild_common_args=(
   --define "_topdir $RPM_TOPDIR"
@@ -135,13 +135,13 @@ build_rpm_spec() {
   rpmbuild "${rpmbuild_common_args[@]}" -bb "$spec_path"
 }
 
-build_rpm_spec "$RPM_TOPDIR/SPECS/kernel-gaokun.spec" &
+build_rpm_spec "$RPM_TOPDIR/SPECS/kernel-gaokun3.spec" &
 pid_kernel=$!
-build_rpm_spec "$RPM_TOPDIR/SPECS/kernel-modules-gaokun.spec" &
+build_rpm_spec "$RPM_TOPDIR/SPECS/kernel-modules-gaokun3.spec" &
 pid_modules=$!
-build_rpm_spec "$RPM_TOPDIR/SPECS/kernel-devel-gaokun.spec" &
+build_rpm_spec "$RPM_TOPDIR/SPECS/kernel-devel-gaokun3.spec" &
 pid_devel=$!
-build_rpm_spec "$RPM_TOPDIR/SPECS/linux-firmware-gaokun.spec" &
+build_rpm_spec "$RPM_TOPDIR/SPECS/linux-firmware-gaokun3.spec" &
 pid_firmware=$!
 
 wait "$pid_kernel"
@@ -149,10 +149,10 @@ wait "$pid_modules"
 wait "$pid_devel"
 wait "$pid_firmware"
 
-kernel_rpm_path="$(find "$RPM_TOPDIR/RPMS" -name 'kernel-gaokun-*.rpm' -print -quit)"
-kernel_modules_rpm_path="$(find "$RPM_TOPDIR/RPMS" -name 'kernel-modules-gaokun-*.rpm' -print -quit)"
-kernel_devel_rpm_path="$(find "$RPM_TOPDIR/RPMS" -name 'kernel-devel-gaokun-*.rpm' -print -quit)"
-firmware_rpm_path="$(find "$RPM_TOPDIR/RPMS" -name 'linux-firmware-gaokun-*.rpm' -print -quit)"
+kernel_rpm_path="$(find "$RPM_TOPDIR/RPMS" -name 'kernel-gaokun3-*.rpm' -print -quit)"
+kernel_modules_rpm_path="$(find "$RPM_TOPDIR/RPMS" -name 'kernel-modules-gaokun3-*.rpm' -print -quit)"
+kernel_devel_rpm_path="$(find "$RPM_TOPDIR/RPMS" -name 'kernel-devel-gaokun3-*.rpm' -print -quit)"
+firmware_rpm_path="$(find "$RPM_TOPDIR/RPMS" -name 'linux-firmware-gaokun3-*.rpm' -print -quit)"
 
 kernel_rpm_name="$(basename "$kernel_rpm_path")"
 kernel_modules_rpm_name="$(basename "$kernel_modules_rpm_path")"

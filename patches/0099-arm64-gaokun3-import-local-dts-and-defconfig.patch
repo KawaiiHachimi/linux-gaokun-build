@@ -6,10 +6,10 @@ Subject: [PATCH] arm64: gaokun3: import local dts and defconfig
 ---
  .../qcom/sc8280xp-huawei-gaokun3-camera.dtsi  | 149 +++++
  .../boot/dts/qcom/sc8280xp-huawei-gaokun3.dts | 371 ++++++++++---
- arch/arm64/configs/gaokun_defconfig           | 507 ++++++++++++++++++
+ arch/arm64/configs/gaokun3_defconfig           | 507 ++++++++++++++++++
  3 files changed, 943 insertions(+), 84 deletions(-)
  create mode 100644 arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3-camera.dtsi
- create mode 100644 arch/arm64/configs/gaokun_defconfig
+ create mode 100644 arch/arm64/configs/gaokun3_defconfig
 
 diff --git a/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3-camera.dtsi b/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3-camera.dtsi
 new file mode 100644
@@ -848,11 +848,11 @@ index 9819454abe13..6e661a2751bb 100644
  		};
  	};
  
-diff --git a/arch/arm64/configs/gaokun_defconfig b/arch/arm64/configs/gaokun_defconfig
+diff --git a/arch/arm64/configs/gaokun3_defconfig b/arch/arm64/configs/gaokun3_defconfig
 new file mode 100644
 index 000000000000..da8b1187d713
 --- /dev/null
-+++ b/arch/arm64/configs/gaokun_defconfig
++++ b/arch/arm64/configs/gaokun3_defconfig
 @@ -0,0 +1,507 @@
 +CONFIG_LOCALVERSION="-gaokun3"
 +# CONFIG_LOCALVERSION_AUTO is not set

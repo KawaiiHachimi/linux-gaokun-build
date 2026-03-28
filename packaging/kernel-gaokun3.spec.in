@@ -1,13 +1,13 @@
 %global debug_package %{nil}
 %global _debugsource_packages 0
 
-Name:           kernel-gaokun
+Name:           kernel-gaokun3
 Version:        @KREL_VERSION@
 Release:        1%{?dist}
 Summary:        Boot files for the gaokun3 kernel
 License:        GPL-2.0-only
 BuildArch:      aarch64
-Source0:        kernel-gaokun.tar.gz
+Source0:        kernel-gaokun3.tar.gz
 
 %description
 Boot image, dtb, config, and System.map for the gaokun3 kernel @KREL@.
@@ -29,5 +29,5 @@ cp -a boot %{buildroot}/
 /boot/dtb-@KREL@/qcom/sc8280xp-huawei-gaokun3.dtb
 
 %changelog
-* Fri Mar 27 2026 cool <bilibili@att.net> - @KREL_VERSION@-1
-- Build gaokun kernel boot RPM
+* Sat Mar 28 2026 cool <bilibili@att.net> - @KREL_VERSION@-1
+- Build gaokun3 kernel boot RPM

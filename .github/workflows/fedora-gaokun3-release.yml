@@ -219,12 +219,12 @@ jobs:
 
       - name: Create disk image and configure boot
         run: |
-          scripts/ci/50_make_image.sh
+          scripts/ci/50_make_image_fedora.sh
 
       - name: Package image and generate release info
         id: package
         run: |
-          scripts/ci/60_package_release.sh
+          scripts/ci/60_package_release_fedora.sh
           TAG_NAME="$(cat "$WORKDIR/tag-name.txt")"
           KREL="$(cat "$WORKDIR/kernel-release-export.txt")"
           PACKAGE_GLOB="$(cat "$WORKDIR/package-glob.txt")"

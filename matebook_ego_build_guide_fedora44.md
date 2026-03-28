@@ -3,7 +3,7 @@
 > **目标机型**：Huawei MateBook E Go 2023 (`SC8280XP` / `gaokun3`)  
 > **目标系统**：Fedora 44 GNOME，GRUB 启动，Btrfs 根文件系统  
 > **推荐宿主机**：Fedora 或其他基于 RPM/DNF 的发行版  
-> **仓库假设**：本文默认你当前仓库位于 `~/gaokun/linux-gaokun-build`
+> **仓库假设**：本文默认你当前仓库位于 `~/gaokun/linux-gaokun-buildbot`
 
 **WSL2 建议切换到支持 `vfat`、`btrfs` 等文件系统更完整的内核，例如：<https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling/releases>**
 
@@ -41,7 +41,7 @@ mkdir -p ~/gaokun/matebook-build-fedora
 cd ~/gaokun
 # 获取指定版本的 Linux 主线源码
 if [ ! -d "mainline-linux" ]; then
-    git clone --depth 1 --branch v7.0-rc4 \
+    git clone --depth 1 --branch v7.0-rc5 \
         https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git \
         mainline-linux
 fi
@@ -50,10 +50,10 @@ fi
 设置环境变量：
 
 ```bash
-export GAOKUN_DIR=~/gaokun/linux-gaokun-build
+export GAOKUN_DIR=~/gaokun/linux-gaokun-buildbot
 export WORKDIR=~/gaokun/matebook-build-fedora
 export KERN_SRC=~/gaokun/mainline-linux
-export KERN_OUT=$GAOKUN_DIR/kernel-out
+export KERN_OUT=~/gaokun/kernel-out
 export FW_REPO=$GAOKUN_DIR/firmware
 export ROOTFS_DIR=$WORKDIR/rootfs
 export IMAGE_FILE=$WORKDIR/fedora-44-gaokun3.img
@@ -74,8 +74,8 @@ git am $GAOKUN_DIR/patches/*.patch
 
 mkdir -p $KERN_OUT
 
-# 根据 patch 后的 gaokun_defconfig 生成配置，再补齐新内核默认选项
-make O=$KERN_OUT ARCH=arm64 gaokun_defconfig
+# 根据 patch 后的 gaokun3_defconfig 生成配置，再补齐新内核默认选项
+make O=$KERN_OUT ARCH=arm64 gaokun3_defconfig
 make O=$KERN_OUT ARCH=arm64 olddefconfig
 make O=$KERN_OUT ARCH=arm64 -j$(nproc)
 
@@ -101,11 +101,13 @@ export LANGUAGE=zh_CN:zh
 
 # 第一步先安装基础系统、locale 和 langpacks
 sudo dnf --installroot=$ROOTFS_DIR --releasever=44 --forcearch=aarch64 --use-host-config -y \
+    --exclude=gnome-boxes,gnome-connections,snapshot,gnome-weather,gnome-contacts,gnome-maps,simple-scan,gnome-clocks,gnome-calculator,gnome-calendar \
     install \
     @core @standard \
     grub2-efi-aa64-modules efibootmgr shim-aa64 alsa-ucm \
     glibc-langpack-en glibc-langpack-zh \
-    langpacks-en langpacks-zh_CN ibus-typing-booster \
+    langpacks-en langpacks-zh_CN \
+    google-noto-color-emoji-fonts google-noto-emoji-fonts \
     i2c-tools alsa-utils pipewire-utils
 
 sudo mkdir -p $ROOTFS_DIR/etc
@@ -116,10 +118,23 @@ EOF
 
 # 第二步再安装桌面环境和应用，能更稳定地把中文翻译子包一起拉进 rootfs
 sudo dnf --installroot=$ROOTFS_DIR --releasever=44 --forcearch=aarch64 --use-host-config -y \
-    --exclude=gnome-boxes,gnome-connections,gnome-browser-connector,snapshot,gnome-weather,gnome-contacts,gnome-maps,simple-scan,gnome-clocks,gnome-calculator,gnome-calendar \
+    --exclude=gnome-boxes,gnome-connections,snapshot,gnome-weather,gnome-contacts,gnome-maps,simple-scan,gnome-clocks,gnome-calculator,gnome-calendar \
     install \
     @gnome-desktop \
-    fcitx5-chinese-addons gnome-tweaks telnet mpv v4l-utils vim git htop fastfetch screen firefox
+    fcitx5-chinese-addons gnome-tweaks gnome-extensions-app telnet mpv v4l-utils vim git htop fastfetch screen firefox
+
+# 安装 RPMFusion 并添加 libavcodec-freeworld（硬解视频编码支持）
+sudo dnf --installroot=$ROOTFS_DIR --releasever=44 --forcearch=aarch64 --use-host-config -y \
+    install \
+    https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
+
+sudo mkdir -p /etc/pki/rpm-gpg
+sudo cp -a $ROOTFS_DIR/etc/pki/rpm-gpg/. /etc/pki/rpm-gpg/
+
+sudo dnf --installroot=$ROOTFS_DIR --releasever=44 --forcearch=aarch64 --use-host-config -y \
+    --setopt=reposdir="$ROOTFS_DIR/etc/yum.repos.d,/etc/yum.repos.d" \
+    install \
+    libavcodec-freeworld
 ```
 
 安装内核、模块、固件和本地工具：
@@ -332,7 +347,8 @@ echo "softdep pinctrl_sc8280xp_lpass_lpi pre: lpasscc_sc8280xp" > /etc/modprobe.
 # Fedora 默认使用 dracut 生成 initramfs
 cat > /etc/dracut.conf.d/matebook.conf <<MODEOF
 hostonly="no"
-add_drivers+=" btrfs nvme phy-qcom-qmp-pcie phy-qcom-qmp-combo phy-qcom-qmp-usb phy-qcom-snps-femto-v2 usb-storage uas typec pci-pwrctrl-pwrseq ath11k ath11k_pci panel-himax-hx83121a himax_hx83121a_spi msm i2c-hid-of lpasscc_sc8280xp snd-soc-sc8280xp pinctrl_sc8280xp_lpass_lpi "
+add_drivers+=" btrfs nvme phy-qcom-qmp-pcie phy-qcom-qmp-combo phy-qcom-qmp-usb phy-qcom-snps-femto-v2 usb-storage uas typec pci-pwrctrl-pwrseq ath11k ath11k_pci i2c-hid-of lpasscc_sc8280xp snd-soc-sc8280xp pinctrl_sc8280xp_lpass_lpi "
+install_items+=" /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcadsp8280.mbn /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qccdsp8280.mbn /lib/firmware/qcom/sc8280xp/SC8280XP-HUAWEI-GAOKUN3-tplg.bin /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/audioreach-tplg.bin "
 MODEOF
 
 dracut --force --kver $KREL

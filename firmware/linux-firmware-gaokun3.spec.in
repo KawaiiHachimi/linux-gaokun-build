@@ -1,16 +1,16 @@
 %global debug_package %{nil}
 %global _debugsource_packages 0
 
-Name:           linux-firmware-gaokun
+Name:           linux-firmware-gaokun3
 Version:        1
 Release:        1%{?dist}
 Summary:        Firmware bundle for gaokun3
 License:        Redistributable, no modification permitted
 BuildArch:      noarch
-Source0:        linux-firmware-gaokun.tar.gz
+Source0:        linux-firmware-gaokun3.tar.gz
 
 %description
-Firmware bundle for Huawei MateBook E Go 2023 image builds.
+Firmware bundle for Huawei MateBook E Go 2023 (gaokun3) image builds.
 
 %prep
 %setup -q -c -T
@@ -28,5 +28,5 @@ cp -a usr %{buildroot}/
 /usr/lib/firmware/qcom/*
 
 %changelog
-* Fri Mar 27 2026 cool <bilibili@att.net> - 1-1
-- Build gaokun firmware RPM
+* Sat Mar 28 2026 cool <bilibili@att.net> - 1-1
+- Build gaokun3 firmware RPM

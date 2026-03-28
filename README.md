@@ -1,4 +1,4 @@
-# linux-gaokun-build
+# linux-gaokun-buildbot
 
 Build scripts, patches, kernel config, DTS files, tools, and firmware for Linux images targeting the Huawei MateBook E Go 2023 (`gaokun3` / `SC8280XP`).
 
