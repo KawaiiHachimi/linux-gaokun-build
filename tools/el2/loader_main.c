@@ -54,6 +54,10 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
 
 	InitializeLib(ImageHandle, SystemTable);
 
+	status = LoadAndStart(ImageHandle, L"\\qebspilaa64.efi", FALSE);
+	if (EFI_ERROR(status))
+		Print(L"qebspil: %r (remoteprocs may not start)\n", status);
+
 	status = LoadAndStart(ImageHandle, L"\\slbounceaa64.efi", FALSE);
 	if (EFI_ERROR(status))
 		Print(L"slbounce: %r (continuing without EL2)\n", status);

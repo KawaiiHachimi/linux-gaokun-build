@@ -49,7 +49,7 @@
 
 ## 补充说明（EL2 可选）
 
-当前仓库的 Fedora/Ubuntu 构建文档已经包含 EL2 DTB 复制和 GRUB 的 EL2 启动项，如果你要在默认 `\\EFI\\BOOT\\BOOTAA64.efi` 入口里串入 Secure Launch，可使用 `tools/slbounce_el2` 目录包装器产物`bootaa64.efi`。
+当前仓库的 Fedora/Ubuntu 构建文档已经包含 EL2 DTB 复制和 GRUB 的 EL2 启动项，如果你要在默认 `\\EFI\\BOOT\\BOOTAA64.efi` 入口里串入 Secure Launch，可使用 `tools/el2` 目录包装器产物`bootaa64.efi`。
 
 ### EL2 引导建议
 
@@ -58,7 +58,7 @@ EL2 专用文档：[el2_kvm_guide.md](el2_kvm_guide.md)
 推荐顺序：
 
 1. 先按本篇完成 Windows + Linux 双启动。
-2. 再按 [el2_kvm_guide.md](el2_kvm_guide.md) 部署 `tools/slbounce_el2` 的 `bootaa64.efi`、`slbounceaa64.efi`、`tcblaunch.exe` 以及 `SimpleInit-AARCH64.efi`。
+2. 再按 [el2_kvm_guide.md](el2_kvm_guide.md) 部署 `tools/el2` 的 `bootaa64.efi`、`slbounceaa64.efi`、`tcblaunch.exe` 以及 `SimpleInit-AARCH64.efi`。
 3. 在 GRUB 中选择 EL2 菜单项启动，并按 EL2 文档完成 KVM 验证。
 
 ## 可选：GRUB 多引导（OS_PROBER）

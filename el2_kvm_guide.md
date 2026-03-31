@@ -1,84 +1,168 @@
 # Huawei MateBook E Go 2023 EL2 + KVM 指南
 
-## 1. 实现目标
+## 1. 目标
 
-- 在 MateBook E Go 2023 上使用现有镜像启用 EL2 启动。
-- 在 Linux 中拿到可用的 KVM 能力。
-- 结合 `tools/slbounce_el2` 使用 `BOOTAA64.EFI` 单入口链式启动。
+- 让 MateBook E Go 2023 通过 Secure Launch 进入 EL2。
+- 在 Linux 中启用可用的 KVM。
+- 在 EL2 模式下补齐 DSP 启动链，尽量恢复音频等依赖 remoteproc 的功能。
 
-## 2. 关键信息
+## 2. 结论先说
 
-当前 Fedora/Ubuntu 构建文档和 CI Workflow 已把 EL2 相关启动条件写入：
+当前要点不是只有 `slbounce`：
 
-1. 内核构建产物里会复制 `sc8280xp-huawei-gaokun3-el2.dtb`。
-2. GRUB 已增加 EL2 启动菜单项（带 `devicetree` 指向 EL2 DTB）。
+1. `slbounce` 负责在 `ExitBootServices()` 时切到 EL2。
+2. 音频依赖的 ADSP/CDSP/SLPI 这类 remoteproc，在 EL2 下通常不能再指望 Qualcomm 原有 hypervisor 替你拉起。
+3. 因此需要额外引入 `qebspil`，在退出 UEFI 前先把 DSP 固件启动。
+4. Linux 内核侧还需要带上 `qebspil` 对应的 remoteproc/PAS handover 补丁；否则即使 DSP 被提前启动，内核也可能无法正确接管。
 
-## 3. 为什么需要 slbounce（简述）
+## 3. 需要的组件
 
-项目地址：https://github.com/TravMurav/slbounce
+EFI 侧至少需要：
 
-Qualcomm WoA 机型通常需要通过 Secure Launch 路径完成 EL2 接管，`slbounceaa64.efi` 负责在退出 UEFI Boot Services 时进行关键切换。
+- `BOOTAA64.EFI`：自定义包装器
+- `slbounceaa64.efi`
+- `tcblaunch.exe`
+- `qebspilaa64.efi`
+- `SimpleInit-AARCH64.efi`（或你自己的下一级引导器）
+- `/firmware/...` 下的 DSP 固件文件
 
-MateBook E Go 2023 当前限制是：
+内核侧至少需要：
 
-- 无原生 UEFI Shell 入口。
-- 固件只认 `\\EFI\\BOOT\\BOOTAA64.EFI`。
+- EL2 DTB：`sc8280xp-huawei-gaokun3-el2.dtb`
+- `CONFIG_VIRTUALIZATION=y`
+- `CONFIG_KVM=y`
+- `CONFIG_REMOTEPROC=y`
+- Qualcomm remoteproc/PAS 相关驱动可用
+- qebspil 对应的 handover / late-attach / EL2-PAS 补丁
 
-因此建议用链式入口：
+## 4. 为什么只用 slbounce 还不够
 
-1. `\\EFI\\BOOT\\BOOTAA64.EFI`（包装器）
-2. `\\slbounceaa64.efi`
-3. `\\EFI\\BOOT\\SimpleInit-AARCH64.efi`
-4. Simple Init 里再选 GRUB/Windows
+`slbounce` 解决的是 **EL2 接管**；它不负责替 Linux 启动 DSP。
 
-## 4. tools/slbounce_el2 目录简要说明
+而 `qebspil` 的用途是：在 `ExitBootServices()` 之前，根据 DT 中启用的 remoteproc 节点，把对应固件先加载并启动。对 EL2 Linux 来说，这一步通常正是音频是否能工作的分水岭。
 
-当前仓库已内置一个可直接编译的包装器目录：`tools/slbounce_el2`。
+## 5. 推荐启动链
 
-主要文件：
+建议链路改成：
 
-- `loader_main.c`：链式启动逻辑（现在是 slbounce -> Simple Init，可以自行修改）。
-- `Makefile`：AArch64 GNU-EFI 交叉编译脚本。
-- `gnu-efi/`：编译所需头文件和库。
-- `slbounceaa64.efi`：slbounce 驱动文件（部署到 EFI 分区根）。
-- `tcblaunch.exe`：已验证版本的 TCB 文件（部署到 EFI 分区根）。
-- `bootaa64.efi`：包装器编译产物。
+1. `\EFI\BOOT\BOOTAA64.EFI`
+2. `\slbounceaa64.efi`
+3. `\qebspilaa64.efi`
+4. `\EFI\BOOT\SimpleInit-AARCH64.efi`
+5. Simple Init -> GRUB -> EL2 菜单项
 
-## 5. 如何编译新的 bootaa64.efi
+说明：
 
-在 Ubuntu 类宿主机：
+- `slbounce` 仍然负责 Secure Launch / EL2 切换。
+- `qebspil` 负责在退出 UEFI 前预启动 DSP。
+- GRUB 菜单必须显式指定 `-el2.dtb`。
+
+## 6. 重新编译项
+
+### 6.1 编译 BOOTAA64.EFI 包装器
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
 
-cd /workspaces/linux-gaokun-build/tools/slbounce_el2
+cd /workspaces/linux-gaokun-build/tools/el2
 make clean
 make
 ```
 
-成功后得到：
+产物：
 
-- `tools/slbounce_el2/bootaa64.efi`
+- `tools/el2/bootaa64.efi`
 
-如果你要改链路（例如改 Simple Init 路径），编辑 `loader_main.c` 后重新 `make` 即可。
+### 6.2 编译 qebspil
 
-## 6. 部署到 EFI 分区
+```bash
+git clone --recursive https://github.com/stephan-gh/qebspil.git
+cd qebspil
+make CROSS_COMPILE=aarch64-linux-gnu-
+```
+
+产物：
+
+- `out/qebspilaa64.efi`
+
+如需强制启动所有 remoteproc（不只限带 `qcom,broken-reset` 的节点）：
+
+```bash
+make CROSS_COMPILE=aarch64-linux-gnu- QEBSPIL_ALWAYS_START=1
+```
+
+不确定平台 DTS 是否完整时，先不要加这个开关。
+
+## 7. 需要补的内核部分
+
+### 7.1 必选
+
+重新编译内核前，至少确认：
+
+```text
+CONFIG_VIRTUALIZATION=y
+CONFIG_KVM=y
+CONFIG_REMOTEPROC=y
+CONFIG_QCOM_SYSMON=y
+CONFIG_QCOM_Q6V5_COMMON=y
+CONFIG_QCOM_Q6V5_ADSP=y
+CONFIG_QCOM_Q6V5_MSS=y
+CONFIG_QCOM_PIL_INFO=y
+```
+
+如果你的树里符号名略有变化，以实际内核版本为准，但原则不变：**KVM + remoteproc + qcom PAS/Q6V5 必须齐**。
+
+### 7.2 必补的补丁方向
+
+当前可直接使用仓库内 `patches/el2` 这组补丁；按语义看，重点是下面三类：
+
+1. **remoteproc handover / late attach**  
+   让 Linux 能接管 qebspil 预启动的 remoteproc，而不是把它当成异常状态。
+
+2. **qcom PAS 在 EL2 下的支持**  
+   当 Linux 自己管理 IOMMU / stream ID / resource table 时，允许 PAS 正确认证和接管固件。
+
+3. **ADSP lite firmware / DTB 清理与接管修正**  
+   否则旧的 lite ADSP 占着内存或状态，完整音频固件接不上，仍可能没声音。
+
+## 8. 固件准备
+
+`qebspil` 读取 DT 中的 `firmware-name`，所以要把对应固件放到 ESP 的顶层 `/firmware` 目录。
+
+建议先在能正常工作的系统里确认需要哪些文件：
+
+```bash
+find /sys/firmware/devicetree -name firmware-name -exec cat {} + | xargs -0n1
+```
+
+然后把对应文件从 `/lib/firmware/` 或 Windows 分区拷到 EFI 分区。SC8280XP 常见至少包括：
+
+- `qcadsp*.mbn`
+- `qccdsp*.mbn`
+- `qcslpi*.mbn`
+
+如果你的机器音频仍不工作，第一优先检查的就是这里。
+
+## 9. EFI 部署
 
 先备份再替换：
 
-1. 备份原文件：`\\EFI\\BOOT\\BOOTAA64.EFI.bak1`。
-2. 复制包装器：`tools/slbounce_el2/bootaa64.efi -> \\EFI\\BOOT\\BOOTAA64.EFI`
-3. EFI 分区**根目录**放置：
-   - `\\slbounceaa64.efi`
-   - `\\tcblaunch.exe`
-   - `\\EFI\\BOOT\\SimpleInit-AARCH64.efi`
-4. Simple Init 菜单中：
-   - Windows -> `\\EFI\\Microsoft\\Boot\\bootmgfw.efi`
-   - Linux -> 发行版 GRUB（例如 `\\EFI\\fedora\\grubaa64.efi` 或 `\\EFI\\ubuntu\\grubaa64.efi`）
-5. GRUB 菜单中选择 EL2 Hypervisor 项启动。
+1. 备份 `\EFI\BOOT\BOOTAA64.EFI`
+2. 替换为 `tools/el2/bootaa64.efi`
+3. EFI 分区根目录放：
+   - `\slbounceaa64.efi`
+   - `\tcblaunch.exe`
+   - `\qebspilaa64.efi`
+4. EFI 分区放：
+   - `\EFI\BOOT\SimpleInit-AARCH64.efi`
+5. EFI 分区顶层放：
+   - `\firmware\...`
+6. Simple Init 中跳转发行版 GRUB
+7. GRUB 中选择 EL2 菜单项
 
-最终 EFI 目录结构类似于：
+建议目录类似：
+
 ```text
 /boot/efi
 ├── EFI
@@ -86,39 +170,58 @@ make
 │   │   ├── BOOTAA64.EFI
 │   │   ├── ...
 │   │   └── SimpleInit-AARCH64.efi
-│   ├── Microsoft
-│   │   ├── Boot
-│   │   └── Recovery
-│   └── ubuntu
-│       ├── grub.cfg
-│       └── grubaa64.efi
+│   ├── ubuntu
+│   │   ├── grubaa64.efi
+│   │   └── grub.cfg
+│   └── ...
+├── firmware
+│   └── qcom
+│       └── sc8280xp
+│           └── HUAWEI
+│               └── gaokun3
+│                   ├── qcadsp8280.mbn
+│                   ├── qccdsp8280.mbn
+│                   └── qcslpi8280.mbn
+├── qebspilaa64.efi
 ├── slbounceaa64.efi
 └── tcblaunch.exe
 ```
 
-## 7. KVM 最小配置检查
-
-当前 `defconfig/gaokun3_defconfig` 至少确保：
-
-```text
-CONFIG_VIRTUALIZATION=y
-CONFIG_KVM=y
-```
-然后重新构建内核并安装。
-
-## 8. 启动后验证（EL2 + KVM）
+## 10. 启动后验证
 
 进系统后执行：
 
 ```bash
 uname -a
-dmesg | grep -Ei 'kvm|hypervisor|el2'
+dmesg | grep -Ei 'kvm|hypervisor|el2|q6v5|adsp|cdsp|slpi|remoteproc'
 ls -l /dev/kvm
+ls /sys/class/remoteproc/
 ```
 
-## 9. 常见问题排查顺序
+重点看：
 
-1. `BOOTAA64.EFI` 已替换，但 EFI 根目录缺少 `slbounceaa64.efi` 或 `tcblaunch.exe`。
-2. 包装器加载路径与实际文件路径不一致（特别是 `SimpleInit-AARCH64.efi` 路径）。
-3. Simple Init 能进但 Linux 选项指向错误的 GRUB 路径。
-4. 内核未启用 `CONFIG_VIRTUALIZATION`/`CONFIG_KVM`。
+- `/dev/kvm` 是否存在
+- 是否已经在 EL2
+- remoteproc 是否存在且不是全部离线
+- 是否有 ADSP/CDSP/SLPI 相关报错
+
+## 11. 出现“EL2 正常但音频无效”时，排查顺序
+
+1. 是否真的部署了 `qebspilaa64.efi`
+2. ESP 顶层是否存在 `/firmware/...`，且文件名和 DT 的 `firmware-name` 一致
+3. EL2 菜单是否确实加载了 `-el2.dtb`
+4. 内核是否包含 qebspil 对应的 remoteproc/PAS 补丁
+5. `dmesg` 是否出现 ADSP/CDSP handover、PAS、IOMMU、resource table 相关错误
+6. 若 remoteproc 节点未带 `qcom,broken-reset`，再考虑重新编译 `QEBSPIL_ALWAYS_START=1`
+
+## 12. 最小建议
+
+如果你现在的目标是“先把音频救活”，最小动作就是：
+
+1. 保留现有 `slbounce` 链路
+2. 新增 `qebspilaa64.efi`
+3. 补齐 ESP 上的 `/firmware/...`
+4. 内核合入 qebspil README 指向的 handover/PAS 补丁后重编
+5. 再验证 ADSP/CDSP/SLPI 启动情况
+
+这一步做完之前，不建议只围着 ALSA/声卡驱动继续排查。
