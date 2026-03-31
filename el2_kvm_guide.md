@@ -78,6 +78,24 @@ make
    - Linux -> 发行版 GRUB（例如 `\\EFI\\fedora\\grubaa64.efi` 或 `\\EFI\\ubuntu\\grubaa64.efi`）
 5. GRUB 菜单中选择 EL2 Hypervisor 项启动。
 
+最终 EFI 目录结构类似于：
+```text
+/boot/efi
+├── EFI
+│   ├── Boot
+│   │   ├── BOOTAA64.EFI
+│   │   ├── ...
+│   │   └── SimpleInit-AARCH64.efi
+│   ├── Microsoft
+│   │   ├── Boot
+│   │   └── Recovery
+│   └── ubuntu
+│       ├── grub.cfg
+│       └── grubaa64.efi
+├── slbounceaa64.efi
+└── tcblaunch.exe
+```
+
 ## 7. KVM 最小配置检查
 
 当前 `defconfig/gaokun3_defconfig` 至少确保：
