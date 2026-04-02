@@ -1,13 +1,13 @@
-From 74aa0595adefdee6726534ab647e4603492a8c2c Mon Sep 17 00:00:00 2001
-From: cool <bilibili@att.net>
-Date: Sat, 28 Mar 2026 09:59:11 +0800
+From 734921fd6167f6487e33bd39805fbd87fc1acde6 Mon Sep 17 00:00:00 2001
+From: local-build <local-build@localhost>
+Date: Thu, 2 Apr 2026 19:17:34 +0800
 Subject: [PATCH] arm64: gaokun3: import local dts and defconfig
 
 ---
  .../qcom/sc8280xp-huawei-gaokun3-camera.dtsi  | 149 +++++
  .../boot/dts/qcom/sc8280xp-huawei-gaokun3.dts | 371 ++++++++++---
- arch/arm64/configs/gaokun3_defconfig           | 507 ++++++++++++++++++
- 3 files changed, 943 insertions(+), 84 deletions(-)
+ arch/arm64/configs/gaokun3_defconfig          | 511 ++++++++++++++++++
+ 3 files changed, 947 insertions(+), 84 deletions(-)
  create mode 100644 arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3-camera.dtsi
  create mode 100644 arch/arm64/configs/gaokun3_defconfig
 
@@ -850,10 +850,10 @@ index 9819454abe13..6e661a2751bb 100644
  
 diff --git a/arch/arm64/configs/gaokun3_defconfig b/arch/arm64/configs/gaokun3_defconfig
 new file mode 100644
-index 000000000000..da8b1187d713
+index 000000000000..0108b380be22
 --- /dev/null
 +++ b/arch/arm64/configs/gaokun3_defconfig
-@@ -0,0 +1,507 @@
+@@ -0,0 +1,511 @@
 +CONFIG_LOCALVERSION="-gaokun3"
 +# CONFIG_LOCALVERSION_AUTO is not set
 +CONFIG_SYSVIPC=y
@@ -914,6 +914,8 @@ index 000000000000..da8b1187d713
 +CONFIG_CPU_FREQ_GOV_CONSERVATIVE=m
 +CONFIG_CPUFREQ_DT_PLATDEV=y
 +CONFIG_ARM_QCOM_CPUFREQ_HW=y
++CONFIG_VIRTUALIZATION=y
++CONFIG_KVM=y
 +# CONFIG_SCHED_CLUSTER is not set
 +CONFIG_MODULES=y
 +CONFIG_MODULE_UNLOAD=y
@@ -1039,6 +1041,7 @@ index 000000000000..da8b1187d713
 +CONFIG_MHI_BUS_PCI_GENERIC=m
 +CONFIG_SYSFB_SIMPLEFB=y
 +CONFIG_EFI_CAPSULE_LOADER=y
++CONFIG_QCOM_TZMEM_MODE_SHMBRIDGE=y
 +CONFIG_QCOM_QSEECOM=y
 +CONFIG_QCOM_QSEECOM_UEFISECAPP=y
 +CONFIG_OF_OVERLAY=y
@@ -1262,6 +1265,7 @@ index 000000000000..da8b1187d713
 +CONFIG_QCOM_IOMMU=y
 +CONFIG_REMOTEPROC=y
 +CONFIG_QCOM_Q6V5_ADSP=m
++CONFIG_QCOM_Q6V5_MSS=m
 +CONFIG_QCOM_Q6V5_PAS=m
 +CONFIG_QCOM_SYSMON=m
 +CONFIG_RPMSG_CHAR=m
@@ -1361,3 +1365,6 @@ index 000000000000..da8b1187d713
 +CONFIG_DEBUG_FS=y
 +# CONFIG_FTRACE is not set
 +# CONFIG_RUNTIME_TESTING_MENU is not set
+-- 
+2.43.0
+
