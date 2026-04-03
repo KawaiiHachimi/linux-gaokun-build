@@ -37,7 +37,8 @@
 - `slbounce` 负责 EL2 切换
 - `tcblaunch.exe` 是配合 `slbounce` 使用的 TCB 文件，仓库中自带一个经过验证可用的微软签名 TCB 二进制文件
 - `qebspil` 负责在 UEFI 阶段完成 DSP 预启动
-- `systemd-boot` 只负责提供标准项和 EL2 项两个菜单入口；真正决定 EL2 行为的是 EL2 菜单项指向的内核、initrd 与 DTB
+- `systemd-boot` 只负责提供标准项和 EL2 项两个菜单入口；真正决定 EL2 行为的是 EL2 BLS 菜单项指向的内核、initrd 与 DTB
+- 标准内核文件布局现在由 `kernel-install` 自动生成，默认与 `machine-id`/entry-token 挂钩
 
 EFI 侧至少需要以下文件：
 
@@ -59,6 +60,13 @@ EFI 侧至少需要以下文件：
 
 ```text
 /boot/efi
+├── <entry-token>
+│   ├── <kernel-release>/linux
+│   ├── <kernel-release>/initrd
+│   ├── <kernel-release>/sc8280xp-huawei-gaokun3.dtb
+│   ├── <kernel-release-el2>/linux
+│   ├── <kernel-release-el2>/initrd
+│   └── <kernel-release-el2>/sc8280xp-huawei-gaokun3-el2.dtb
 ├── EFI
 │   ├── BOOT
 │   │   └── BOOTAA64.EFI
@@ -78,11 +86,16 @@ EFI 侧至少需要以下文件：
 ├── tcblaunch.exe
 ├── loader
 │   ├── entries
-│   │   └── *.conf
+│   │   ├── <entry-token>-<kernel-release>.conf
+│   │   └── <entry-token>-<kernel-release-el2>.conf
 │   └── loader.conf
-└── gaokun3
-    └── ...
 ```
+
+其中：
+
+- `<entry-token>` 默认通常就是 `/etc/machine-id`
+- 上面的 `linux` 文件名是 `90-loaderentry.install` 自动生成的标准 BLS Type #1 命名，不再是手工命名的 `vmlinuz`
+- 若系统改用了别的 `kernel-install --entry-token`，目录名前缀会随之变化，但整体结构不变
 
 ## 4. 内核侧要求
 

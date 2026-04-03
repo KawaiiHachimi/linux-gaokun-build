@@ -75,7 +75,7 @@ sudo mount -t proc proc "$MNT/proc"
 sudo mount -t sysfs sys "$MNT/sys"
 sudo mount -t tmpfs tmpfs "$MNT/run"
 
-sudo chroot "$MNT" /usr/bin/env KREL="$KREL" KREL_EL2="$KREL_EL2" BUILD_EL2="$BUILD_EL2" /bin/bash -euxo pipefail <<'CHROOT_EOF'
+sudo chroot "$MNT" /usr/bin/env KREL="$KREL" KREL_EL2="$KREL_EL2" BUILD_EL2="$BUILD_EL2" ROOT_UUID="$ROOT_UUID" /bin/bash -euxo pipefail <<'CHROOT_EOF'
 echo "fedora" > /etc/hostname
 id -u user >/dev/null 2>&1 || useradd -m -s /bin/bash -G wheel user
 echo "user:user" | chpasswd
@@ -149,53 +149,80 @@ hostonly="no"
 add_drivers+=" btrfs nvme phy-qcom-qmp-pcie phy-qcom-qmp-combo phy-qcom-qmp-usb phy-qcom-snps-femto-v2 usb-storage uas typec pci-pwrctrl-pwrseq ath11k ath11k_pci i2c-hid-of "
 MODEOF
 
+install -d /etc/kernel
+cat > /etc/kernel/install.conf <<'EOF'
+layout=bls
+EOF
+
+cat > /etc/kernel/cmdline <<EOF
+root=UUID=$ROOT_UUID rootflags=subvol=@ clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1
+EOF
+
+cat > /etc/kernel/devicetree <<'EOF'
+qcom/sc8280xp-huawei-gaokun3.dtb
+EOF
+
 dracut --force --kver "$KREL"
 if [[ "$BUILD_EL2" == "true" && -n "$KREL_EL2" ]]; then
   dracut --force --kver "$KREL_EL2"
 fi
 
+rm -f /etc/machine-id
+systemd-machine-id-setup
+MACHINE_ID="$(cat /etc/machine-id)"
+
 bootctl --esp-path=/boot/efi install
-CHROOT_EOF
 
-ENTRY_DIR="$MNT/boot/efi/loader/entries"
-ESP_OS_DIR="$MNT/boot/efi/gaokun3/fedora"
-BASE_ENTRY_FILE="fedora-gaokun3.conf"
-EL2_ENTRY_FILE="fedora-gaokun3-el2.conf"
-BASE_CMDLINE="root=UUID=${ROOT_UUID} rootflags=subvol=@ clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1"
-EL2_CMDLINE="root=UUID=${ROOT_UUID} rootflags=subvol=@ clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave modprobe.blacklist=simpledrm efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1"
+run_kernel_install() {
+  local krel="$1"
+  local image="$2"
+  local initrd="$3"
+  local dtb="$4"
+  local cmdline="$5"
+  local conf_root
 
-sudo mkdir -p "$ENTRY_DIR" "$ESP_OS_DIR/$KREL"
-sudo install -Dm644 "$MNT/boot/vmlinuz-$KREL" "$ESP_OS_DIR/$KREL/vmlinuz"
-sudo install -Dm644 "$MNT/boot/initramfs-$KREL.img" "$ESP_OS_DIR/$KREL/initramfs.img"
-sudo install -Dm644 \
-  "$MNT/boot/dtb-$KREL/qcom/sc8280xp-huawei-gaokun3.dtb" \
-  "$ESP_OS_DIR/$KREL/sc8280xp-huawei-gaokun3.dtb"
+  conf_root="$(mktemp -d)"
+  cat > "$conf_root/install.conf" <<'EOF'
+layout=bls
+EOF
+  printf '%s\n' "$cmdline" > "$conf_root/cmdline"
+  printf 'qcom/%s\n' "$dtb" > "$conf_root/devicetree"
 
-sudo tee "$MNT/boot/efi/loader/loader.conf" >/dev/null <<EOF
-default ${BASE_ENTRY_FILE}
+  kernel-install --entry-token=machine-id remove "$krel" || true
+  KERNEL_INSTALL_CONF_ROOT="$conf_root" \
+    kernel-install --verbose --make-entry-directory=yes --entry-token=machine-id add \
+    "$krel" "$image" "$initrd"
+  rm -rf "$conf_root"
+}
+
+BASE_CMDLINE="$(cat /etc/kernel/cmdline)"
+run_kernel_install \
+  "$KREL" \
+  "/boot/vmlinuz-$KREL" \
+  "/boot/initramfs-$KREL.img" \
+  "sc8280xp-huawei-gaokun3.dtb" \
+  "$BASE_CMDLINE"
+
+if [[ "$BUILD_EL2" == "true" && -n "$KREL_EL2" ]]; then
+  EL2_CMDLINE="${BASE_CMDLINE} modprobe.blacklist=simpledrm"
+  run_kernel_install \
+    "$KREL_EL2" \
+    "/boot/vmlinuz-$KREL_EL2" \
+    "/boot/initramfs-$KREL_EL2.img" \
+    "sc8280xp-huawei-gaokun3-el2.dtb" \
+    "$EL2_CMDLINE"
+fi
+
+cat > /boot/efi/loader/loader.conf <<EOF
+default ${MACHINE_ID}-${KREL}.conf
 timeout 5
 console-mode keep
 editor no
 EOF
-
-sudo tee "$ENTRY_DIR/$BASE_ENTRY_FILE" >/dev/null <<EOF
-title Fedora Linux ${FEDORA_RELEASE}
-version ${KREL}
-sort-key gaokun3
-architecture AA64
-linux /gaokun3/fedora/${KREL}/vmlinuz
-initrd /gaokun3/fedora/${KREL}/initramfs.img
-devicetree /gaokun3/fedora/${KREL}/sc8280xp-huawei-gaokun3.dtb
-options ${BASE_CMDLINE}
-EOF
+CHROOT_EOF
 
 if [[ "$BUILD_EL2" == "true" && -n "$KREL_EL2" ]]; then
-  sudo mkdir -p "$ESP_OS_DIR/$KREL_EL2" "$MNT/boot/efi/EFI/systemd/drivers" "$MNT/boot/efi/firmware"
-  sudo install -Dm644 "$MNT/boot/vmlinuz-$KREL_EL2" "$ESP_OS_DIR/$KREL_EL2/vmlinuz"
-  sudo install -Dm644 "$MNT/boot/initramfs-$KREL_EL2.img" "$ESP_OS_DIR/$KREL_EL2/initramfs.img"
-  sudo install -Dm644 \
-    "$MNT/boot/dtb-$KREL_EL2/qcom/sc8280xp-huawei-gaokun3-el2.dtb" \
-    "$ESP_OS_DIR/$KREL_EL2/sc8280xp-huawei-gaokun3-el2.dtb"
+  sudo mkdir -p "$MNT/boot/efi/EFI/systemd/drivers" "$MNT/boot/efi/firmware"
   sudo install -Dm644 "$GAOKUN_DIR/tools/el2/slbounceaa64.efi" \
     "$MNT/boot/efi/EFI/systemd/drivers/slbounceaa64.efi"
   sudo install -Dm644 "$GAOKUN_DIR/tools/el2/qebspilaa64.efi" \
@@ -208,17 +235,6 @@ if [[ "$BUILD_EL2" == "true" && -n "$KREL_EL2" ]]; then
     "$MNT/boot/efi/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qccdsp8280.mbn"
   sudo install -Dm644 "$MNT/lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn" \
     "$MNT/boot/efi/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn"
-
-  sudo tee "$ENTRY_DIR/$EL2_ENTRY_FILE" >/dev/null <<EOF
-title Fedora Linux ${FEDORA_RELEASE} (EL2 Hypervisor)
-version ${KREL_EL2}
-sort-key gaokun3-el2
-architecture AA64
-linux /gaokun3/fedora/${KREL_EL2}/vmlinuz
-initrd /gaokun3/fedora/${KREL_EL2}/initramfs.img
-devicetree /gaokun3/fedora/${KREL_EL2}/sc8280xp-huawei-gaokun3-el2.dtb
-options ${EL2_CMDLINE}
-EOF
 fi
 
 sync

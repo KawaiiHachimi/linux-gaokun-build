@@ -27,7 +27,7 @@
 完成后，内置硬盘 EFI 分区根目录通常应包含如下内容：
 - `EFI`
 - `loader`
-- `gaokun3`
+- `<machine-id>` 或其他 `kernel-install` entry-token 目录
 - `firmware`（若镜像包含 EL2）
 - `tcblaunch.exe`（若镜像包含 EL2）
 
@@ -37,6 +37,12 @@
 - `Microsoft`
 
 Windows 一般可由 `systemd-boot` 自动探测，所以无需额外修改 Windows 引导项。
+
+说明：
+
+- 现在镜像使用标准 `kernel-install` + BLS 布局，不再固定使用 `gaokun3/<distro>/<kernel-release>/...` 目录。
+- 默认情况下，Gaokun3 镜像会使用 `--entry-token=machine-id`，因此 ESP 中通常会出现 `/loader/entries/<machine-id>-<kernel-release>.conf`，以及 `/<machine-id>/<kernel-release>/linux|initrd|*.dtb` 这类目录结构。
+- 若发行版或用户改过 `kernel-install --entry-token`，顶层目录名可能不是 `machine-id`，但仍会遵循同样的 BLS 规则。
 
 ## 四、修改 EFI 分区卷序列号
 
@@ -57,6 +63,9 @@ Windows 一般可由 `systemd-boot` 自动探测，所以无需额外修改 Wind
 
 - 若启动菜单未出现，优先检查：
 	- `\EFI\BOOT\BOOTAA64.EFI` 是否已经被镜像中的 `systemd-boot` 覆盖
-	- EFI 分区根目录结构是否完整（包含 `\EFI\systemd\`、`loader\entries\`、`gaokun3\`，以及 EL2 所需的 `firmware\`、`tcblaunch.exe`）
+	- EFI 分区根目录结构是否完整
+	- 是否存在 `\loader\entries\<entry-token>-<kernel-release>.conf`
+	- 是否存在 `\<entry-token>\<kernel-release>\` 下的 `linux`、`initrd`、`*.dtb`
+	- EL2 所需的 `firmware\`、`tcblaunch.exe`、`\EFI\systemd\drivers\` 是否完整
 	- EFI 卷序列号是否与镜像一致
 - 若误操作导致无法启动，可启动 USB 存储设备上的 Linux 或 WinPE（推荐使用 [CNBYDJ PE](https://bydjpe.winos.me)）挂载内置硬盘 EFI 分区，使用先前备份的 `BOOTAA64.EFI.bak` 回滚。

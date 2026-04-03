@@ -4,13 +4,16 @@
 Name:           @PKG_NAME@
 Version:        @KREL_VERSION@
 Release:        1%{?dist}
-Summary:        Boot files for the gaokun3 kernel
+Summary:        Kernel image, DTB, config, and System.map for the gaokun3 kernel
 License:        GPL-2.0-only
 BuildArch:      aarch64
 Source0:        @SOURCE_NAME@
+Requires(posttrans): dracut
+Requires(posttrans): systemd
+Requires(preun): systemd
 
 %description
-Boot image, dtb, config, and System.map for the gaokun3 kernel @KREL@.
+Kernel image, boot DTB copy, config, and System.map for the gaokun3 kernel @KREL@.
 
 %prep
 %setup -q -c -T
@@ -21,12 +24,45 @@ tar -xzf %{SOURCE0}
 %install
 mkdir -p %{buildroot}
 cp -a boot %{buildroot}/
+cp -a usr %{buildroot}/
+
+%posttrans
+if [ "$1" -ge 1 ] && command -v dracut >/dev/null 2>&1 && command -v kernel-install >/dev/null 2>&1; then
+    temp_conf_root="$(mktemp -d)"
+    cleanup() {
+        rm -rf "$temp_conf_root"
+    }
+    trap cleanup EXIT
+
+    if [ -s /etc/kernel/cmdline ]; then
+        cmdline="$(tr -s '[:space:]' ' ' </etc/kernel/cmdline)"
+    else
+        cmdline="$(tr ' ' '\n' </proc/cmdline | grep -ve '^BOOT_IMAGE=' -e '^initrd=' | tr '\n' ' ')"
+    fi
+    cmdline="${cmdline%" "}"
+
+    printf 'layout=bls\n' > "$temp_conf_root/install.conf"
+    printf '%s\n' "$cmdline" > "$temp_conf_root/cmdline"
+    printf 'qcom/@DTB_FILE@\n' > "$temp_conf_root/devicetree"
+
+    dracut --force --kver @KREL@ >/dev/null 2>&1 || :
+    kernel-install --entry-token=machine-id remove @KREL@ >/dev/null 2>&1 || :
+    KERNEL_INSTALL_CONF_ROOT="$temp_conf_root" \
+        kernel-install --make-entry-directory=yes --entry-token=machine-id add \
+        @KREL@ /boot/vmlinuz-@KREL@ /boot/initramfs-@KREL@.img >/dev/null 2>&1 || :
+fi
+
+%preun
+if [ "$1" -eq 0 ] && command -v kernel-install >/dev/null 2>&1; then
+    kernel-install --entry-token=machine-id remove @KREL@ >/dev/null 2>&1 || :
+fi
 
 %files
 /boot/vmlinuz-@KREL@
 /boot/System.map-@KREL@
 /boot/config-@KREL@
 /boot/dtb-@KREL@/qcom/@DTB_FILE@
+/usr/lib/dracut/dracut.conf.d/90-gaokun3-@KREL@.conf
 
 %changelog
 * Sat Mar 28 2026 cool <bilibili@att.net> - @KREL_VERSION@-1

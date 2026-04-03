@@ -62,7 +62,7 @@ sudo mount -t proc proc "$MNT/proc"
 sudo mount -t sysfs sys "$MNT/sys"
 sudo mount -t tmpfs tmpfs "$MNT/run"
 
-sudo chroot "$MNT" /usr/bin/env KREL="$KREL" KREL_EL2="$KREL_EL2" BUILD_EL2="$BUILD_EL2" /bin/bash -euxo pipefail <<'CHROOT_EOF'
+sudo chroot "$MNT" /usr/bin/env KREL="$KREL" KREL_EL2="$KREL_EL2" BUILD_EL2="$BUILD_EL2" ROOT_UUID="$ROOT_UUID" /bin/bash -euxo pipefail <<'CHROOT_EOF'
 echo "ubuntu" > /etc/hostname
 id -u user >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo user
 echo "user:user" | chpasswd
@@ -169,54 +169,106 @@ ath11k_pci
 i2c-hid-of
 MODEOF
 
-update-initramfs -c -k "$KREL"
+mkdir -p /etc/initramfs-tools/hooks
+cat > /etc/initramfs-tools/hooks/gaokun3-firmware <<'EOF'
+#!/bin/sh
+set -e
+
+. /usr/share/initramfs-tools/hook-functions
+
+copy_fw() {
+    copy_file firmware "$1" || [ "$?" -eq 1 ]
+}
+
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcadsp8280.mbn
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qccdsp8280.mbn
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/audioreach-tplg.bin
+EOF
+chmod 0755 /etc/initramfs-tools/hooks/gaokun3-firmware
+
+install -d /etc/kernel
+cat > /etc/kernel/install.conf <<'EOF'
+layout=bls
+EOF
+
+cat > /etc/kernel/cmdline <<EOF
+root=UUID=$ROOT_UUID clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave modprobe.blacklist=simpledrm efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1
+EOF
+
+cat > /etc/kernel/devicetree <<'EOF'
+qcom/sc8280xp-huawei-gaokun3.dtb
+EOF
+
+run_update_initramfs() {
+  local krel="$1"
+  local dtb="$2"
+
+  printf 'qcom/%s\n' "$dtb" > /etc/kernel/devicetree
+  update-initramfs -c -k "$krel"
+}
+
+run_update_initramfs "$KREL" "sc8280xp-huawei-gaokun3.dtb"
 if [[ "$BUILD_EL2" == "true" && -n "$KREL_EL2" ]]; then
-  update-initramfs -c -k "$KREL_EL2"
+  run_update_initramfs "$KREL_EL2" "sc8280xp-huawei-gaokun3-el2.dtb"
 fi
 
+rm -f /etc/machine-id
+systemd-machine-id-setup
+MACHINE_ID="$(cat /etc/machine-id)"
+
 bootctl --esp-path=/boot/efi install
-CHROOT_EOF
 
-ENTRY_DIR="$MNT/boot/efi/loader/entries"
-ESP_OS_DIR="$MNT/boot/efi/gaokun3/ubuntu"
-BASE_ENTRY_FILE="ubuntu-gaokun3.conf"
-EL2_ENTRY_FILE="ubuntu-gaokun3-el2.conf"
-BASE_CMDLINE="root=UUID=${ROOT_UUID} clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave modprobe.blacklist=simpledrm efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1"
+run_kernel_install() {
+  local krel="$1"
+  local image="$2"
+  local initrd="$3"
+  local dtb="$4"
+  local cmdline="$5"
+  local conf_root
 
-sudo mkdir -p "$ENTRY_DIR" "$ESP_OS_DIR/$KREL"
-sudo install -Dm644 "$MNT/boot/vmlinuz-$KREL" "$ESP_OS_DIR/$KREL/vmlinuz"
-sudo install -Dm644 "$MNT/boot/initrd.img-$KREL" "$ESP_OS_DIR/$KREL/initrd.img"
-sudo install -Dm644 \
-  "$MNT/usr/lib/linux-image-$KREL/qcom/sc8280xp-huawei-gaokun3.dtb" \
-  "$ESP_OS_DIR/$KREL/sc8280xp-huawei-gaokun3.dtb"
+  conf_root="$(mktemp -d)"
+  cat > "$conf_root/install.conf" <<'EOF'
+layout=bls
+EOF
+  printf '%s\n' "$cmdline" > "$conf_root/cmdline"
+  printf 'qcom/%s\n' "$dtb" > "$conf_root/devicetree"
 
-sudo tee "$MNT/boot/efi/loader/loader.conf" >/dev/null <<EOF
-default ${BASE_ENTRY_FILE}
+  kernel-install --entry-token=machine-id remove "$krel" || true
+  KERNEL_INSTALL_CONF_ROOT="$conf_root" \
+    kernel-install --verbose --make-entry-directory=yes --entry-token=machine-id add \
+    "$krel" "$image" "$initrd"
+  rm -rf "$conf_root"
+}
+
+BASE_CMDLINE="$(cat /etc/kernel/cmdline)"
+run_kernel_install \
+  "$KREL" \
+  "/boot/vmlinuz-$KREL" \
+  "/boot/initrd.img-$KREL" \
+  "sc8280xp-huawei-gaokun3.dtb" \
+  "$BASE_CMDLINE"
+
+if [[ "$BUILD_EL2" == "true" && -n "$KREL_EL2" ]]; then
+  EL2_CMDLINE="${BASE_CMDLINE}"
+  run_kernel_install \
+    "$KREL_EL2" \
+    "/boot/vmlinuz-$KREL_EL2" \
+    "/boot/initrd.img-$KREL_EL2" \
+    "sc8280xp-huawei-gaokun3-el2.dtb" \
+    "$EL2_CMDLINE"
+fi
+
+cat > /boot/efi/loader/loader.conf <<EOF
+default ${MACHINE_ID}-${KREL}.conf
 timeout 5
 console-mode keep
 editor no
 EOF
-
-sudo tee "$ENTRY_DIR/$BASE_ENTRY_FILE" >/dev/null <<EOF
-title Ubuntu ${UBUNTU_RELEASE}
-version ${KREL}
-sort-key gaokun3
-architecture AA64
-linux /gaokun3/ubuntu/${KREL}/vmlinuz
-initrd /gaokun3/ubuntu/${KREL}/initrd.img
-devicetree /gaokun3/ubuntu/${KREL}/sc8280xp-huawei-gaokun3.dtb
-options ${BASE_CMDLINE}
-EOF
+CHROOT_EOF
 
 if [[ "$BUILD_EL2" == "true" && -n "$KREL_EL2" ]]; then
-  EL2_CMDLINE="$BASE_CMDLINE"
-
-  sudo mkdir -p "$ESP_OS_DIR/$KREL_EL2" "$MNT/boot/efi/EFI/systemd/drivers" "$MNT/boot/efi/firmware"
-  sudo install -Dm644 "$MNT/boot/vmlinuz-$KREL_EL2" "$ESP_OS_DIR/$KREL_EL2/vmlinuz"
-  sudo install -Dm644 "$MNT/boot/initrd.img-$KREL_EL2" "$ESP_OS_DIR/$KREL_EL2/initrd.img"
-  sudo install -Dm644 \
-    "$MNT/usr/lib/linux-image-$KREL_EL2/qcom/sc8280xp-huawei-gaokun3-el2.dtb" \
-    "$ESP_OS_DIR/$KREL_EL2/sc8280xp-huawei-gaokun3-el2.dtb"
+  sudo mkdir -p "$MNT/boot/efi/EFI/systemd/drivers" "$MNT/boot/efi/firmware"
   sudo install -Dm644 "$GAOKUN_DIR/tools/el2/slbounceaa64.efi" \
     "$MNT/boot/efi/EFI/systemd/drivers/slbounceaa64.efi"
   sudo install -Dm644 "$GAOKUN_DIR/tools/el2/qebspilaa64.efi" \
@@ -229,17 +281,6 @@ if [[ "$BUILD_EL2" == "true" && -n "$KREL_EL2" ]]; then
     "$MNT/boot/efi/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qccdsp8280.mbn"
   sudo install -Dm644 "$MNT/lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn" \
     "$MNT/boot/efi/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn"
-
-  sudo tee "$ENTRY_DIR/$EL2_ENTRY_FILE" >/dev/null <<EOF
-title Ubuntu ${UBUNTU_RELEASE} (EL2 Hypervisor)
-version ${KREL_EL2}
-sort-key gaokun3-el2
-architecture AA64
-linux /gaokun3/ubuntu/${KREL_EL2}/vmlinuz
-initrd /gaokun3/ubuntu/${KREL_EL2}/initrd.img
-devicetree /gaokun3/ubuntu/${KREL_EL2}/sc8280xp-huawei-gaokun3-el2.dtb
-options ${EL2_CMDLINE}
-EOF
 fi
 
 sync

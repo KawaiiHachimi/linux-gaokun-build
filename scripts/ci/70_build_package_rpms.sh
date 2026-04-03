@@ -71,6 +71,7 @@ build_variant_rpms() {
   local modules_pkg="kernel-modules-gaokun3${pkg_suffix}"
   local devel_pkg="kernel-devel-gaokun3${pkg_suffix}"
   local krel_version="${krel//-/_}"
+  local dracut_conf="90-gaokun3-${krel}.conf"
   local kernel_stage="$BUILDROOT_DIR/${kernel_pkg}"
   local modules_stage="$BUILDROOT_DIR/${modules_pkg}"
   local modules_raw_stage="$BUILDROOT_DIR/${modules_pkg}-raw"
@@ -81,8 +82,9 @@ build_variant_rpms() {
   local devel_tar="${devel_pkg}.tar.gz"
 
   rm -rf "$kernel_stage" "$modules_stage" "$modules_raw_stage" "$devel_stage"
-  mkdir -p "$kernel_stage/boot/dtb-$krel/qcom" "$modules_stage/usr/lib" "$modules_stage/lib" \
-    "$devel_tree" "$devel_stage/usr/lib/modules/$krel"
+  mkdir -p "$kernel_stage/boot/dtb-$krel/qcom" "$kernel_stage/usr/lib/dracut/dracut.conf.d" \
+    "$modules_stage/usr/lib" "$modules_stage/lib" "$devel_tree" \
+    "$devel_stage/usr/lib/modules/$krel"
 
   install -Dm644 "$out_dir/arch/arm64/boot/Image" \
     "$kernel_stage/boot/vmlinuz-$krel"
@@ -92,10 +94,17 @@ build_variant_rpms() {
     "$kernel_stage/boot/config-$krel"
   install -Dm644 "$out_dir/arch/arm64/boot/dts/qcom/$dtb_name" \
     "$kernel_stage/boot/dtb-$krel/qcom/$dtb_name"
+  cat > "$kernel_stage/usr/lib/dracut/dracut.conf.d/$dracut_conf" <<'EOF'
+hostonly="no"
+add_drivers+=" btrfs nvme phy-qcom-qmp-pcie phy-qcom-qmp-combo phy-qcom-qmp-usb phy-qcom-snps-femto-v2 usb-storage uas typec pci-pwrctrl-pwrseq ath11k ath11k_pci i2c-hid-of lpasscc_sc8280xp snd-soc-sc8280xp pinctrl_sc8280xp_lpass_lpi "
+install_items+=" /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcadsp8280.mbn /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qccdsp8280.mbn /lib/firmware/qcom/sc8280xp/SC8280XP-HUAWEI-GAOKUN3-tplg.bin /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/audioreach-tplg.bin "
+EOF
 
   make -C "$src_dir" O="$out_dir" ARCH=arm64 INSTALL_MOD_PATH="$modules_raw_stage" modules_install
   mv "$modules_raw_stage/lib/modules" "$modules_stage/usr/lib/"
   rm -rf "$modules_raw_stage"
+  install -Dm644 "$out_dir/arch/arm64/boot/dts/qcom/$dtb_name" \
+    "$modules_stage/usr/lib/modules/$krel/dtb/qcom/$dtb_name"
   rm -f "$modules_stage/usr/lib/modules/$krel/build" \
         "$modules_stage/usr/lib/modules/$krel/source"
   ln -s ../usr/lib/modules "$modules_stage/lib/modules"

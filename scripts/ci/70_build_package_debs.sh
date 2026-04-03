@@ -83,6 +83,7 @@ build_kernel_variant() {
   local modules_raw_stage="$BUILDROOT_DIR/${modules_pkg}-raw"
   local headers_stage="$BUILDROOT_DIR/${headers_pkg}"
   local headers_tree="$headers_stage/usr/src/linux-headers-$krel"
+  local postinst_script
 
   rm -rf "$image_stage" "$modules_stage" "$modules_raw_stage" "$headers_stage"
   mkdir -p "$image_stage/boot" "$image_stage/usr/lib/linux-image-$krel/qcom"
@@ -94,6 +95,8 @@ build_kernel_variant() {
     "$image_stage/boot/System.map-$krel"
   install -Dm644 "$out_dir/.config" \
     "$image_stage/boot/config-$krel"
+  install -Dm644 "$out_dir/arch/arm64/boot/dts/qcom/$dtb_name" \
+    "$image_stage/boot/dtb-$krel"
   install -Dm644 "$out_dir/arch/arm64/boot/dts/qcom/$dtb_name" \
     "$image_stage/usr/lib/linux-image-$krel/qcom/$dtb_name"
 
@@ -113,10 +116,34 @@ build_kernel_variant() {
   ln -s "../../../src/linux-headers-$krel" "$headers_stage/lib/modules/$krel/build"
   ln -s "../../../src/linux-headers-$krel" "$headers_stage/lib/modules/$krel/source"
 
+  read -r -d '' postinst_script <<EOF || true
+temp_kernel_dir=\$(mktemp -d)
+cleanup() {
+  for name in install.conf cmdline devicetree; do
+    if [ -f "\$temp_kernel_dir/\$name.orig" ]; then
+      cp "\$temp_kernel_dir/\$name.orig" "/etc/kernel/\$name"
+    else
+      rm -f "/etc/kernel/\$name"
+    fi
+  done
+  rm -rf "\$temp_kernel_dir"
+}
+trap cleanup EXIT
+mkdir -p /etc/kernel
+for name in install.conf cmdline devicetree; do
+  if [ -f "/etc/kernel/\$name" ]; then
+    cp "/etc/kernel/\$name" "\$temp_kernel_dir/\$name.orig"
+  fi
+done
+printf 'layout=bls\\n' > /etc/kernel/install.conf
+printf 'qcom/%s\\n' "$dtb_name" > /etc/kernel/devicetree
+update-initramfs -c -k $krel 2>/dev/null || true
+EOF
+
   build_deb "$image_pkg" "$image_stage" "$deb_version" \
     "Linux kernel image for gaokun3 (${krel})" \
-    "" "$DEB_ARCH" \
-    "update-initramfs -c -k $krel 2>/dev/null || true"
+    "linux-firmware-gaokun3" "$DEB_ARCH" \
+    "$postinst_script"
 
   build_deb "$modules_pkg" "$modules_stage" "$deb_version" \
     "Linux kernel modules for gaokun3 (${krel})" \
@@ -146,9 +173,25 @@ build_firmware_package() {
   local firmware_deb="linux-firmware-gaokun3_${FIRMWARE_DEB_VERSION}_all.deb"
 
   rm -rf "$firmware_stage"
-  mkdir -p "$firmware_stage/lib/firmware"
+  mkdir -p "$firmware_stage/lib/firmware" "$firmware_stage/etc/initramfs-tools/hooks"
   cp -a "$GAOKUN_DIR/firmware/." "$firmware_stage/lib/firmware/"
   rm -f "$firmware_stage/lib/firmware/"*.spec.in
+  cat > "$firmware_stage/etc/initramfs-tools/hooks/gaokun3-firmware" <<'EOF'
+#!/bin/sh
+set -e
+
+. /usr/share/initramfs-tools/hook-functions
+
+copy_fw() {
+    copy_file firmware "$1" || [ "$?" -eq 1 ]
+}
+
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcadsp8280.mbn
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qccdsp8280.mbn
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/audioreach-tplg.bin
+EOF
+  chmod 0755 "$firmware_stage/etc/initramfs-tools/hooks/gaokun3-firmware"
 
   build_deb "linux-firmware-gaokun3" "$firmware_stage" "$FIRMWARE_DEB_VERSION" \
     "Firmware bundle for Huawei MateBook E Go 2023 (gaokun3)" "" "all"

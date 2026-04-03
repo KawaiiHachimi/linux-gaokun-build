@@ -250,10 +250,15 @@ sudo mkdir -p $ROOTFS_DIR/boot
 sudo cp $KERN_OUT/arch/arm64/boot/Image \
     $ROOTFS_DIR/boot/vmlinuz-$KREL
 
-# Ubuntu 风格：DTB 存放路径
+# Ubuntu 的 kernel-install 会从这里查找 DTB
 sudo mkdir -p $ROOTFS_DIR/usr/lib/linux-image-$KREL/qcom
 sudo cp $KERN_OUT/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dtb \
      $ROOTFS_DIR/usr/lib/linux-image-$KREL/qcom/sc8280xp-huawei-gaokun3.dtb
+
+# 额外保留一份 /boot 下的 DTB，方便后续切换到 GRUB 等其他引导器
+sudo mkdir -p $ROOTFS_DIR/boot
+sudo cp $KERN_OUT/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dtb \
+     $ROOTFS_DIR/boot/dtb-$KREL
 
 # 如果需要 EL2，再安装第二套 EL2 内核与 DTB
 if [ -n "$KREL_EL2" ]; then
@@ -264,6 +269,9 @@ if [ -n "$KREL_EL2" ]; then
     sudo mkdir -p $ROOTFS_DIR/usr/lib/linux-image-$KREL_EL2/qcom
     sudo cp $KERN_OUT_EL2/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3-el2.dtb \
          $ROOTFS_DIR/usr/lib/linux-image-$KREL_EL2/qcom/sc8280xp-huawei-gaokun3-el2.dtb
+    sudo mkdir -p $ROOTFS_DIR/boot
+    sudo cp $KERN_OUT_EL2/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3-el2.dtb \
+         $ROOTFS_DIR/boot/dtb-$KREL_EL2
 fi
 
 # 直接复制项目内置的最小固件集
@@ -293,6 +301,26 @@ sudo chmod +x $ROOTFS_DIR/usr/local/bin/patch-nvm-bdaddr.py
 
 sudo cp $GAOKUN_DIR/tools/audio/sc8280xp.conf \
     $ROOTFS_DIR/usr/share/alsa/ucm2/Qualcomm/sc8280xp/
+
+# 让 Ubuntu 的 initramfs-tools 在早期启动阶段就带上 DSP 固件，
+# 否则标准启动项里 remoteproc 可能在根文件系统挂载前就因找不到固件而失败
+sudo mkdir -p $ROOTFS_DIR/etc/initramfs-tools/hooks
+sudo tee $ROOTFS_DIR/etc/initramfs-tools/hooks/gaokun3-firmware > /dev/null <<'EOF'
+#!/bin/sh
+set -e
+
+. /usr/share/initramfs-tools/hook-functions
+
+copy_fw() {
+    copy_file firmware "$1" || [ "$?" -eq 1 ]
+}
+
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcadsp8280.mbn
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qccdsp8280.mbn
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn
+copy_fw /lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/audioreach-tplg.bin
+EOF
+sudo chmod 0755 $ROOTFS_DIR/etc/initramfs-tools/hooks/gaokun3-firmware
 ```
 
 卸载之前的虚拟文件系统：
@@ -346,7 +374,7 @@ UUID=${EFI_UUID}   /boot/efi vfat   defaults,nofail,x-systemd.device-timeout=10s
 EOF
 ```
 
-### 3. chroot 初始化并生成 systemd-boot
+### 3. chroot 初始化并生成 systemd-boot / BLS
 
 ```bash
 cleanup_mounts() {
@@ -371,61 +399,59 @@ sudo chroot $MNT /bin/bash
 在 chroot 中执行：
 
 ```bash
-update-initramfs -c -k $KREL
+install -d /etc/kernel
+cat > /etc/kernel/install.conf <<EOF
+layout=bls
+EOF
+
+cat > /etc/kernel/cmdline <<EOF
+root=UUID=${ROOT_UUID} clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave modprobe.blacklist=simpledrm efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1
+EOF
+
+cat > /etc/kernel/devicetree <<EOF
+qcom/sc8280xp-huawei-gaokun3.dtb
+EOF
+
+run_update_initramfs() {
+    local krel="$1"
+    local dtb="$2"
+
+    printf 'qcom/%s\n' "$dtb" > /etc/kernel/devicetree
+    update-initramfs -c -k "$krel"
+}
+
+run_update_initramfs $KREL sc8280xp-huawei-gaokun3.dtb
 if [ -n "$KREL_EL2" ]; then
-    update-initramfs -c -k $KREL_EL2
+    run_update_initramfs $KREL_EL2 sc8280xp-huawei-gaokun3-el2.dtb
 fi
+
+rm -f /etc/machine-id
+systemd-machine-id-setup
+MACHINE_ID=$(cat /etc/machine-id)
 
 bootctl --esp-path=/boot/efi install
 
-ROOT_UUID=$(blkid -s UUID -o value /dev/disk/by-label/rootfs)
-
-mkdir -p /boot/efi/loader/entries
-mkdir -p /boot/efi/gaokun3/ubuntu/$KREL
-
-cp /boot/vmlinuz-$KREL /boot/efi/gaokun3/ubuntu/$KREL/vmlinuz
-cp /boot/initrd.img-$KREL /boot/efi/gaokun3/ubuntu/$KREL/initrd.img
-cp /usr/lib/linux-image-$KREL/qcom/sc8280xp-huawei-gaokun3.dtb \
-   /boot/efi/gaokun3/ubuntu/$KREL/sc8280xp-huawei-gaokun3.dtb
-
-cat > /boot/efi/loader/loader.conf <<EOF
-default ubuntu-gaokun3.conf
-timeout 5
-console-mode keep
-editor no
-EOF
-
-cat > /boot/efi/loader/entries/ubuntu-gaokun3.conf <<EOF
-title Ubuntu 26.04
-version ${KREL}
-sort-key gaokun3
-architecture AA64
-linux /gaokun3/ubuntu/${KREL}/vmlinuz
-initrd /gaokun3/ubuntu/${KREL}/initrd.img
-devicetree /gaokun3/ubuntu/${KREL}/sc8280xp-huawei-gaokun3.dtb
-options root=UUID=${ROOT_UUID} clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave modprobe.blacklist=simpledrm efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1
-EOF
+kernel-install --make-entry-directory=yes --entry-token=machine-id add \
+    $KREL /boot/vmlinuz-$KREL /boot/initrd.img-$KREL
 
 if [ -n "$KREL_EL2" ]; then
-    mkdir -p /boot/efi/gaokun3/ubuntu/$KREL_EL2
     mkdir -p /boot/efi/EFI/systemd/drivers
     mkdir -p /boot/efi/firmware/qcom/sc8280xp/HUAWEI/gaokun3
 
-    cp /boot/vmlinuz-$KREL_EL2 /boot/efi/gaokun3/ubuntu/$KREL_EL2/vmlinuz
-    cp /boot/initrd.img-$KREL_EL2 /boot/efi/gaokun3/ubuntu/$KREL_EL2/initrd.img
-    cp /usr/lib/linux-image-$KREL_EL2/qcom/sc8280xp-huawei-gaokun3-el2.dtb \
-       /boot/efi/gaokun3/ubuntu/$KREL_EL2/sc8280xp-huawei-gaokun3-el2.dtb
-
-    cat > /boot/efi/loader/entries/ubuntu-gaokun3-el2.conf <<EOF
-title Ubuntu 26.04 (EL2 Hypervisor)
-version ${KREL_EL2}
-sort-key gaokun3-el2
-architecture AA64
-linux /gaokun3/ubuntu/${KREL_EL2}/vmlinuz
-initrd /gaokun3/ubuntu/${KREL_EL2}/initrd.img
-devicetree /gaokun3/ubuntu/${KREL_EL2}/sc8280xp-huawei-gaokun3-el2.dtb
-options root=UUID=${ROOT_UUID} clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave modprobe.blacklist=simpledrm efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1
+    EL2_CONF_ROOT=$(mktemp -d)
+    cat > $EL2_CONF_ROOT/install.conf <<EOF
+layout=bls
 EOF
+    cat > $EL2_CONF_ROOT/cmdline <<EOF
+root=UUID=${ROOT_UUID} clk_ignore_unused pd_ignore_unused arm64.nopauth iommu.passthrough=0 iommu.strict=0 pcie_aspm.policy=powersupersave modprobe.blacklist=simpledrm efi=noruntime fbcon=rotate:1 usbhid.quirks=0x12d1:0x10b8:0x20000000 consoleblank=0 loglevel=4 psi=1
+EOF
+    cat > $EL2_CONF_ROOT/devicetree <<EOF
+qcom/sc8280xp-huawei-gaokun3-el2.dtb
+EOF
+    KERNEL_INSTALL_CONF_ROOT=$EL2_CONF_ROOT \
+        kernel-install --make-entry-directory=yes --entry-token=machine-id add \
+        $KREL_EL2 /boot/vmlinuz-$KREL_EL2 /boot/initrd.img-$KREL_EL2
+    rm -rf $EL2_CONF_ROOT
 
     cp $GAOKUN_DIR/tools/el2/slbounceaa64.efi /boot/efi/EFI/systemd/drivers/
     cp $GAOKUN_DIR/tools/el2/qebspilaa64.efi /boot/efi/EFI/systemd/drivers/
@@ -438,8 +464,21 @@ EOF
        /boot/efi/firmware/qcom/sc8280xp/HUAWEI/gaokun3/
 fi
 
+cat > /boot/efi/loader/loader.conf <<EOF
+default ${MACHINE_ID}-${KREL}.conf
+timeout 5
+console-mode keep
+editor no
+EOF
+
 exit
 ```
+
+说明：
+
+- 这里不再手工创建 `loader/entries/*.conf`，而是交给 `kernel-install` 的 `90-loaderentry.install` 自动生成标准 BLS 条目。
+- 默认使用 `--entry-token=machine-id`，所以最终条目文件名会是 `/boot/efi/loader/entries/<machine-id>-<kernel-release>.conf`。
+- 内核、`initrd` 和 DTB 会自动复制到 `/boot/efi/<machine-id>/<kernel-release>/` 下；这正是 BLS Type #1 的标准目录布局。
 
 ### 4. 收尾清理
 
