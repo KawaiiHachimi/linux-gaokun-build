@@ -1,17 +1,19 @@
-# Huawei MateBook E Go 2023 Fedora 44 手动构建指南
+English | [中文](matebook_ego_build_guide_fedora44_zh.md)
 
-> **目标机型**：Huawei MateBook E Go 2023 (`SC8280XP` / `gaokun3`)  
-> **目标系统**：Fedora 44 GNOME，systemd-boot 启动，Btrfs 根文件系统  
-> **推荐宿主机**：Fedora 或其他基于 RPM/DNF 的发行版  
-> **仓库假设**：本文默认你当前仓库位于 `~/gaokun/linux-gaokun-buildbot`
+# Huawei MateBook E Go 2023 Fedora 44 Manual Build Guide
 
-**WSL2 建议切换到支持 `vfat`、`btrfs` 等文件系统更完整的内核，例如：<https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling/releases>**
+> **Target Device**: Huawei MateBook E Go 2023 (`SC8280XP` / `gaokun3`)  
+> **Target System**: Fedora 44 GNOME, systemd-boot boot, Btrfs root filesystem  
+> **Recommended Host**: Fedora or other RPM/DNF-based distributions  
+> **Repository Assumption**: This document assumes your current repository is at `~/gaokun/linux-gaokun-buildbot`
+
+**For WSL2, it's recommended to switch to a kernel with more complete filesystem support such as `vfat`, `btrfs`, for example: <https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling/releases>**
 
 ---
 
-## 准备说明
+## Preparation Notes
 
-本文使用项目内已有内容，不需要额外获取设备专属仓库：
+This document uses content already in the project, no need to obtain additional device-specific repositories:
 
 - `patches/`
 - `defconfig/`
@@ -19,27 +21,27 @@
 - `tools/`
 - `firmware/`
 
-如果宿主机是 arm64，可直接原生构建。  
-如果宿主机是 x86_64，请自行准备可用的 aarch64 交叉工具链，并在编译内核时额外设置 `CROSS_COMPILE`。
+If the host is arm64, you can build natively.  
+If the host is x86_64, please prepare a usable aarch64 cross toolchain and set `CROSS_COMPILE` additionally when compiling the kernel.
 
 ---
 
-## 第一步：准备工作目录
+## Step 1: Prepare Working Directory
 
-安装基础依赖（Fedora arm64 宿主机示例）：
+Install basic dependencies (Fedora arm64 host example):
 
 ```bash
 sudo dnf install gcc make bison flex bc openssl-devel elfutils-libelf-devel \
     ncurses-devel dwarves git parted dosfstools btrfs-progs curl python3 rsync ccache
 ```
 
-准备源码与工作目录：
+Prepare source and working directory:
 
 ```bash
 mkdir -p ~/gaokun/matebook-build-fedora
 
 cd ~/gaokun
-# 获取指定版本的 Linux 主线源码
+# Get specified version of Linux mainline source
 if [ ! -d "mainline-linux" ]; then
     git clone --depth 1 --branch v7.0-rc7 \
         https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git \
@@ -47,7 +49,7 @@ if [ ! -d "mainline-linux" ]; then
 fi
 ```
 
-设置环境变量：
+Set environment variables:
 
 ```bash
 export GAOKUN_DIR=~/gaokun/linux-gaokun-buildbot
@@ -71,14 +73,14 @@ fi
 
 ---
 
-## 第二步：编译内核
+## Step 2: Compile Kernel
 
-先编译标准内核。
+First compile the standard kernel.
 
 ```bash
 cd $KERN_SRC
 
-# 应用项目内置补丁
+# Apply project built-in patches
 git config user.name "local builder"
 git config user.email "builder@example.com"
 git am $GAOKUN_DIR/patches/*.patch
@@ -86,7 +88,7 @@ git am $GAOKUN_DIR/patches/*.patch
 mkdir -p $KERN_OUT
 ccache -z
 
-# 根据 patch 后的 gaokun3_defconfig 生成配置，再补齐新内核默认选项
+# Generate config from patched gaokun3_defconfig, then fill in new kernel default options
 make O=$KERN_OUT ARCH=arm64 gaokun3_defconfig
 make O=$KERN_OUT ARCH=arm64 olddefconfig
 make O=$KERN_OUT ARCH=arm64 -j$(nproc)
@@ -98,7 +100,7 @@ KREL_EL2=""
 ccache -s
 ```
 
-如果你需要 EL2，建议先把标准内核安装到 rootfs，或者先单独备份好 `Image`、`dtb`、`modules` 产物，然后在同一套源码上继续构建带 `-gaokun3-el2` 后缀的内核，EL2 产物单独放到另一个输出目录：
+If you need EL2, it's recommended to first install the standard kernel to rootfs, or separately backup the `Image`, `dtb`, `modules` outputs, then continue building the kernel with `-gaokun3-el2` suffix on the same source tree, with EL2 outputs in a separate output directory:
 
 ```bash
 rm -rf $KERN_OUT_EL2
@@ -119,11 +121,11 @@ ccache -s
 
 ---
 
-## 第三步：构建 RootFS
+## Step 3: Build RootFS
 
-使用 `dnf --installroot` 安装 Fedora 44 GNOME Desktop，并补充启动、网络、输入法和常用工具。
+Use `dnf --installroot` to install Fedora 44 GNOME Desktop, with additional boot, network, input method and common tools.
 
-> 若宿主机是 Ubuntu 等非 Fedora 系统，可先安装 `dnf`，然后继续使用 `--installroot` 方式构建。
+> If the host is Ubuntu or other non-Fedora system, you can first install `dnf`, then continue using `--installroot` method to build.
 
 ```bash
 mkdir -p $ROOTFS_DIR
@@ -133,7 +135,7 @@ export LANG=zh_CN.UTF-8
 export LC_ALL=zh_CN.UTF-8
 export LANGUAGE=zh_CN:zh
 
-# 第一步先安装基础系统、locale 和 langpacks
+# First step: install base system, locale and langpacks
 sudo dnf --installroot=$ROOTFS_DIR --releasever=44 --forcearch=aarch64 --use-host-config -y \
     --exclude=gnome-boxes,gnome-connections,snapshot,gnome-weather,gnome-contacts,gnome-maps,simple-scan,gnome-clocks,gnome-calculator,gnome-calendar \
     install \
@@ -150,14 +152,14 @@ LANG=zh_CN.UTF-8
 LC_MESSAGES=zh_CN.UTF-8
 EOF
 
-# 第二步再安装桌面环境和应用，能更稳定地把中文翻译子包一起拉进 rootfs
+# Second step: install desktop environment and applications, can more reliably pull Chinese translation subpackages into rootfs
 sudo dnf --installroot=$ROOTFS_DIR --releasever=44 --forcearch=aarch64 --use-host-config -y \
     --exclude=gnome-boxes,gnome-connections,snapshot,gnome-weather,gnome-contacts,gnome-maps,simple-scan,gnome-clocks,gnome-calculator,gnome-calendar \
     install \
     @gnome-desktop \
     fcitx5-chinese-addons gnome-tweaks gnome-extensions-app telnet mpv v4l-utils vim nano ripgrep git htop fastfetch screen firefox
 
-# 安装 RPMFusion 并添加 libavcodec-freeworld（硬解视频编码支持）
+# Install RPMFusion and add libavcodec-freeworld (hardware video decoding support)
 sudo dnf --installroot=$ROOTFS_DIR --releasever=44 --forcearch=aarch64 --use-host-config -y \
     install \
     https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
@@ -171,7 +173,7 @@ sudo dnf --installroot=$ROOTFS_DIR --releasever=44 --forcearch=aarch64 --use-hos
     libavcodec-freeworld
 ```
 
-安装内核、模块、固件和本地工具：
+Install kernel, modules, firmware and local tools:
 
 ```bash
 cd $KERN_SRC
@@ -182,22 +184,22 @@ echo $KREL
 sudo make O=$KERN_OUT ARCH=arm64 INSTALL_MOD_PATH=$ROOTFS_DIR modules_install
 sudo rm -f $ROOTFS_DIR/lib/modules/$KREL/{build,source}
 
-# 安装 kernel image
+# Install kernel image
 sudo mkdir -p $ROOTFS_DIR/boot
 sudo cp $KERN_OUT/arch/arm64/boot/Image \
     $ROOTFS_DIR/boot/vmlinuz-$KREL
 
-# Fedora 的 kernel-install 会从这里查找 DTB
+# Fedora's kernel-install will look for DTB from here
 sudo mkdir -p $ROOTFS_DIR/usr/lib/modules/$KREL/dtb/qcom
 sudo cp $KERN_OUT/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dtb \
     $ROOTFS_DIR/usr/lib/modules/$KREL/dtb/qcom/
 
-# 额外保留一份 /boot 下的 DTB，方便后续切换到 GRUB 等其他引导器
+# Keep an extra copy of DTB under /boot for convenience when switching to GRUB or other bootloaders
 sudo mkdir -p $ROOTFS_DIR/boot/dtb-$KREL/qcom
 sudo cp $KERN_OUT/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dtb \
     $ROOTFS_DIR/boot/dtb-$KREL/qcom/
 
-# 如果需要 EL2，再安装第二套 EL2 内核与 DTB
+# If EL2 is needed, install the second set of EL2 kernel and DTB
 if [ -n "$KREL_EL2" ]; then
     sudo make -C $KERN_SRC O=$KERN_OUT_EL2 ARCH=arm64 INSTALL_MOD_PATH=$ROOTFS_DIR modules_install
     sudo rm -f $ROOTFS_DIR/lib/modules/$KREL_EL2/{build,source}
@@ -211,11 +213,11 @@ if [ -n "$KREL_EL2" ]; then
         $ROOTFS_DIR/boot/dtb-$KREL_EL2/qcom/
 fi
 
-# 直接复制项目内置的最小固件集
+# Directly copy the project's built-in minimum firmware set
 sudo mkdir -p $ROOTFS_DIR/lib/firmware
 sudo cp -r $FW_REPO/. $ROOTFS_DIR/lib/firmware/
 
-# 安装项目内的设备专属脚本与服务
+# Install project's device-specific scripts and services
 sudo mkdir -p $ROOTFS_DIR/usr/local/bin
 sudo mkdir -p $ROOTFS_DIR/etc/systemd/system
 sudo mkdir -p $ROOTFS_DIR/usr/share/alsa/ucm2/Qualcomm/sc8280xp
@@ -242,9 +244,9 @@ sudo cp $GAOKUN_DIR/tools/audio/sc8280xp.conf \
 
 ---
 
-## 第四步：制作可启动镜像
+## Step 4: Create Bootable Image
 
-### 1. 创建镜像和分区
+### 1. Create Image and Partitions
 
 ```bash
 cd $WORKDIR
@@ -263,19 +265,19 @@ EFI_UUID=$(sudo blkid -s UUID -o value ${LOOP}p1)
 ROOT_UUID=$(sudo blkid -s UUID -o value ${LOOP}p2)
 ```
 
-### 2. 创建 Btrfs 子卷并同步 RootFS
+### 2. Create Btrfs Subvolumes and Sync RootFS
 
 ```bash
 sudo mkdir -p /mnt/ego-fedora
 
-# 创建 Fedora 常见子卷布局：@ 用于根分区，@home 用于家目录，@var 用于 /var
+# Create common Fedora subvolume layout: @ for root partition, @home for home directory, @var for /var
 sudo mount ${LOOP}p2 /mnt/ego-fedora
 sudo btrfs subvolume create /mnt/ego-fedora/@
 sudo btrfs subvolume create /mnt/ego-fedora/@home
 sudo btrfs subvolume create /mnt/ego-fedora/@var
 sudo umount /mnt/ego-fedora
 
-# 挂载子卷并准备 EFI 分区
+# Mount subvolumes and prepare EFI partition
 sudo mount -o subvol=@ ${LOOP}p2 /mnt/ego-fedora
 sudo mkdir -p /mnt/ego-fedora/home
 sudo mount -o subvol=@home ${LOOP}p2 /mnt/ego-fedora/home
@@ -294,7 +296,7 @@ UUID=${EFI_UUID}   /boot/efi vfat   defaults,nofail,x-systemd.device-timeout=10s
 EOF
 ```
 
-### 3. chroot 初始化并生成 systemd-boot / BLS
+### 3. chroot Initialization and Generate systemd-boot / BLS
 
 ```bash
 cleanup_mounts() {
@@ -318,7 +320,7 @@ sudo mount -t tmpfs tmpfs /mnt/ego-fedora/run
 sudo chroot /mnt/ego-fedora /bin/bash
 ```
 
-在 chroot 中执行：
+Execute inside chroot:
 
 ```bash
 cat > /etc/dracut.conf.d/matebook.conf <<EOF
@@ -397,19 +399,19 @@ EOF
 exit
 ```
 
-说明：
+Notes:
 
-- 这里不再手工维护 `loader/entries/*.conf` 和 `gaokun3/fedora/...` 目录，而是让 `kernel-install` 生成标准 BLS Type #1 布局。
-- 默认使用 `--entry-token=machine-id`，因此条目名会变成 `/boot/efi/loader/entries/<machine-id>-<kernel-release>.conf`。
-- Fedora 44 的 `90-loaderentry.install` 会从 `/usr/lib/modules/<kernel-release>/dtb/` 查找设备树，所以 DTB 必须放到这个标准路径里。
-- Fedora 默认的 `51-dracut-rescue.install` 会额外生成 `0-rescue` 启动项，但这个救援项默认不带 `devicetree`，在 gaokun3 上不可用，因此这里显式将其禁用。
+- Instead of manually maintaining `loader/entries/*.conf` and `gaokun3/fedora/...` directories, we let `kernel-install` generate the standard BLS Type #1 layout.
+- Default uses `--entry-token=machine-id`, so entry names become `/boot/efi/loader/entries/<machine-id>-<kernel-release>.conf`.
+- Fedora 44's `90-loaderentry.install` looks for device tree from `/usr/lib/modules/<kernel-release>/dtb/`, so DTB must be placed in this standard path.
+- Fedora's default `51-dracut-rescue.install` generates an additional `0-rescue` boot entry, but this rescue entry doesn't include `devicetree` by default and is unusable on gaokun3, so it's explicitly disabled here.
 
-### 触屏驱动鸣谢
+### Touchscreen Driver Acknowledgments
 
-- [chiyuki0325/EGoTouchRev-Linux](https://github.com/chiyuki0325/EGoTouchRev-Linux)：本仓库 Fedora 镜像中预装的 `himax-spi` DKMS 触屏驱动来源与主要上游参考。
-- [awarson2233/EGoTouchRev](https://github.com/awarson2233/EGoTouchRev)：EGoTouchRev-Linux 所参考的 Windows 侧触控算法项目，也是本方案触摸算法调参与行为的重要上游来源。
+- [chiyuki0325/EGoTouchRev-Linux](https://github.com/chiyuki0325/EGoTouchRev-Linux): The source and main upstream reference for the `himax-spi` DKMS touchscreen driver preinstalled in this repository's Fedora image.
+- [awarson2233/EGoTouchRev](https://github.com/awarson2233/EGoTouchRev): The Windows-side touch algorithm project referenced by EGoTouchRev-Linux, also an important upstream source for touch algorithm tuning and behavior in this solution.
 
-### 4. 收尾清理
+### 4. Final Cleanup
 
 ```bash
 sync
@@ -419,7 +421,7 @@ sudo losetup -d $LOOP
 
 ---
 
-## 第五步：双系统和 EL2 说明
+## Step 5: Dual Boot and EL2 Instructions
 
-- 双系统覆盖 EFI 的方式请参考 [dual_boot_guide.md](dual_boot_guide.md)
-- EL2 的 EFI 文件放置方式请参考 [el2_kvm_guide.md](el2_kvm_guide.md)
+- For dual boot EFI overlay method, refer to [dual_boot_guide_en.md](dual_boot_guide_en.md)
+- For EL2 EFI file placement, refer to [el2_kvm_guide_en.md](el2_kvm_guide_en.md)

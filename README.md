@@ -1,3 +1,5 @@
+English | [中文](docs/README_zh.md)
+
 # linux-gaokun-buildbot
 
 Build scripts, patches, kernel config, DTS files, tools, and firmware for Linux images targeting the Huawei MateBook E Go 2023 (`gaokun3` / `SC8280XP`).
@@ -37,10 +39,10 @@ The image and local-install workflows now follow the standard `kernel-install` +
 
 ## Getting started
 
-- Dual-boot guide (Chinese): [dual_boot_guide.md](dual_boot_guide.md)
-- EL2 + KVM guide (Chinese): [el2_kvm_guide.md](el2_kvm_guide.md)
-- Build guide – Fedora 44 (Chinese): [matebook_ego_build_guide_fedora44.md](matebook_ego_build_guide_fedora44.md)
-- Build guide – Ubuntu 26.04 (Chinese): [matebook_ego_build_guide_ubuntu26.04.md](matebook_ego_build_guide_ubuntu26.04.md)
+- Dual-boot guide: [English](docs/dual_boot_guide_en.md) | [中文](docs/dual_boot_guide_zh.md)
+- EL2 + KVM guide: [English](docs/el2_kvm_guide_en.md) | [中文](docs/el2_kvm_guide_zh.md)
+- Build guide – Fedora 44: [English](docs/matebook_ego_build_guide_fedora44_en.md) | [中文](docs/matebook_ego_build_guide_fedora44_zh.md)
+- Build guide – Ubuntu 26.04: [English](docs/matebook_ego_build_guide_ubuntu26.04_en.md) | [中文](docs/matebook_ego_build_guide_ubuntu26.04_zh.md)
 - GitHub Actions – Fedora: [.github/workflows/fedora-gaokun3-release.yml](.github/workflows/fedora-gaokun3-release.yml)
 - GitHub Actions – Ubuntu: [.github/workflows/ubuntu-gaokun3-release.yml](.github/workflows/ubuntu-gaokun3-release.yml)
 

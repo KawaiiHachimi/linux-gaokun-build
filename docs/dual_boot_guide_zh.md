@@ -1,3 +1,5 @@
+[English](dual_boot_guide_en.md) | 中文
+
 # Windows + Linux 双系统安装与引导配置（DG + systemd-boot）
 
 本文档以 `systemd-boot` 为例，接管默认启动项，实现 Windows / Linux 二选一
@@ -58,7 +60,7 @@ Windows 一般可由 `systemd-boot` 自动探测，所以无需额外修改 Wind
 
 ## 补充说明（EL2 可选）
 
-若镜像已带好 EL2 所需文件，完成本篇后直接在 `systemd-boot` 中选择 EL2 菜单项启动即可，详见 [el2_kvm_guide.md](el2_kvm_guide.md)。
+若镜像已带好 EL2 所需文件，完成本篇后直接在 `systemd-boot` 中选择 EL2 菜单项启动即可，详见 [el2_kvm_guide_zh.md](el2_kvm_guide_zh.md)。
 
 ## 常见提醒
 

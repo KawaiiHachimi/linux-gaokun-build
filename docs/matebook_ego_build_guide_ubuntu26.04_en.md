@@ -1,17 +1,19 @@
-# Huawei MateBook E Go 2023 Ubuntu 26.04 手动构建指南
+English | [中文](matebook_ego_build_guide_ubuntu26.04_zh.md)
 
-> **目标机型**：Huawei MateBook E Go 2023 (`SC8280XP` / `gaokun3`)  
-> **目标系统**：Ubuntu 26.04 (Resolute Raccoon) GNOME，systemd-boot 启动，ext4 根文件系统  
-> **推荐宿主机**：Ubuntu/Debian 或其他支持 `debootstrap` 的发行版  
-> **仓库假设**：本文默认你当前仓库位于 `~/gaokun/linux-gaokun-buildbot`
+# Huawei MateBook E Go 2023 Ubuntu 26.04 Manual Build Guide
 
-**WSL2 建议切换到支持 `vfat`、`ext4` 等文件系统更完整的内核，例如：<https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling/releases>**
+> **Target Device**: Huawei MateBook E Go 2023 (`SC8280XP` / `gaokun3`)  
+> **Target System**: Ubuntu 26.04 (Resolute Raccoon) GNOME, systemd-boot boot, ext4 root filesystem  
+> **Recommended Host**: Ubuntu/Debian or other distributions supporting `debootstrap`  
+> **Repository Assumption**: This document assumes your current repository is at `~/gaokun/linux-gaokun-buildbot`
+
+**For WSL2, it's recommended to switch to a kernel with more complete filesystem support such as `vfat`, `ext4`, for example: <https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling/releases>**
 
 ---
 
-## 准备说明
+## Preparation Notes
 
-本文使用项目内已有内容，不需要额外获取设备专属仓库：
+This document uses content already in the project, no need to obtain additional device-specific repositories:
 
 - `patches/`
 - `defconfig/`
@@ -19,14 +21,14 @@
 - `tools/`
 - `firmware/`
 
-如果宿主机是 arm64，可直接原生构建。  
-如果宿主机是 x86_64，请自行准备可用的 aarch64 交叉工具链，并在编译内核时额外设置 `CROSS_COMPILE`。
+If the host is arm64, you can build natively.  
+If the host is x86_64, please prepare a usable aarch64 cross toolchain and set `CROSS_COMPILE` additionally when compiling the kernel.
 
 ---
 
-## 第一步：准备工作目录
+## Step 1: Prepare Working Directory
 
-安装基础依赖（Ubuntu 宿主机示例）：
+Install basic dependencies (Ubuntu host example):
 
 ```bash
 sudo apt-get update
@@ -36,13 +38,13 @@ sudo apt-get install -y \
     debootstrap qemu-user-static binfmt-support zstd xz-utils kmod
 ```
 
-准备源码与工作目录：
+Prepare source and working directory:
 
 ```bash
 mkdir -p ~/gaokun/matebook-build-ubuntu
 
 cd ~/gaokun
-# 获取指定版本的 Linux 主线源码
+# Get specified version of Linux mainline source
 if [ ! -d "mainline-linux" ]; then
     git clone --depth 1 --branch v7.0-rc7 \
         https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git \
@@ -50,7 +52,7 @@ if [ ! -d "mainline-linux" ]; then
 fi
 ```
 
-设置环境变量：
+Set environment variables:
 
 ```bash
 export GAOKUN_DIR=~/gaokun/linux-gaokun-buildbot
@@ -74,14 +76,14 @@ fi
 
 ---
 
-## 第二步：编译内核
+## Step 2: Compile Kernel
 
-先编译标准内核。
+First compile the standard kernel.
 
 ```bash
 cd $KERN_SRC
 
-# 应用项目内置补丁
+# Apply project built-in patches
 git config user.name "local builder"
 git config user.email "builder@example.com"
 git am $GAOKUN_DIR/patches/*.patch
@@ -89,7 +91,7 @@ git am $GAOKUN_DIR/patches/*.patch
 mkdir -p $KERN_OUT
 ccache -z
 
-# 根据 patch 后的 gaokun3_defconfig 生成配置，再补齐新内核默认选项
+# Generate config from patched gaokun3_defconfig, then fill in new kernel default options
 make O=$KERN_OUT ARCH=arm64 gaokun3_defconfig
 make O=$KERN_OUT ARCH=arm64 olddefconfig
 make O=$KERN_OUT ARCH=arm64 -j$(nproc)
@@ -101,7 +103,7 @@ KREL_EL2=""
 ccache -s
 ```
 
-如果你需要 EL2，建议先把标准内核安装到 rootfs，或者先单独备份好 `Image`、`dtb`、`modules` 产物，然后在同一套源码上继续构建带 `-gaokun3-el2` 后缀的内核，EL2 产物单独放到另一个输出目录：
+If you need EL2, it's recommended to first install the standard kernel to rootfs, or separately backup the `Image`, `dtb`, `modules` outputs, then continue building the kernel with `-gaokun3-el2` suffix on the same source tree, with EL2 outputs in a separate output directory:
 
 ```bash
 rm -rf $KERN_OUT_EL2
@@ -122,17 +124,17 @@ ccache -s
 
 ---
 
-## 第三步：构建 RootFS
+## Step 3: Build RootFS
 
-使用 Ubuntu 官方 `ubuntu-base` 预构建 rootfs 作为基础，然后通过 chroot 安装桌面环境与额外软件包。
+Use Ubuntu's official `ubuntu-base` prebuilt rootfs as base, then install desktop environment and additional packages via chroot.
 
-> 如果宿主机是 x86_64，需要拷贝 `qemu-aarch64-static` 到 rootfs 中以支持 chroot 执行 arm64 二进制。  
-> [avikivity/qemu-aarch64-static-fast](https://github.com/avikivity/qemu-aarch64-static-fast) 是一个 QEMU 用户态模拟器的参数包装器 (Wrapper)。它通过在运行时动态注入高性能 CPU 标志位（如 `pauth-impdef=on`），透明地提升 AArch64 程序在非原生环境下的运行效率。
+> If the host is x86_64, you need to copy `qemu-aarch64-static` to the rootfs to support chroot execution of arm64 binaries.  
+> [avikivity/qemu-aarch64-static-fast](https://github.com/avikivity/qemu-aarch64-static-fast) is a parameter wrapper for QEMU user-mode emulator. It transparently improves AArch64 program execution efficiency in non-native environments by dynamically injecting high-performance CPU flags (such as `pauth-impdef=on`) at runtime.
 
 ```bash
 mkdir -p $ROOTFS_DIR
 
-# 下载 ubuntu-base 预构建 rootfs（自带正确的 apt 源配置，无需手动写入）
+# Download ubuntu-base prebuilt rootfs (comes with correct apt source configuration, no manual setup needed)
 UBUNTU_BASE_URL="https://cdimages.ubuntu.com/ubuntu-base/releases/26.04/release/ubuntu-base-26.04-base-arm64.tar.gz"
 UBUNTU_BASE_BETA_URL="https://cdimages.ubuntu.com/ubuntu-base/releases/26.04/beta/ubuntu-base-26.04-beta-base-arm64.tar.gz"
 UBUNTU_BASE_TAR=$WORKDIR/ubuntu-base-arm64.tar.gz
@@ -144,13 +146,13 @@ fi
 
 sudo tar -xzf "$UBUNTU_BASE_TAR" -C $ROOTFS_DIR
 
-# x86_64 宿主机：拷贝 qemu-aarch64-static 以支持 chroot
+# x86_64 host: copy qemu-aarch64-static to support chroot
 if [ "$(uname -m)" != "aarch64" ]; then
     sudo cp "$(which qemu-aarch64-static)" $ROOTFS_DIR/usr/bin/
 fi
 ```
 
-挂载虚拟文件系统并进入 chroot 安装软件包：
+Mount virtual filesystems and enter chroot to install packages:
 
 ```bash
 sudo mount --bind /dev $ROOTFS_DIR/dev
@@ -159,7 +161,7 @@ sudo mount -t proc proc $ROOTFS_DIR/proc
 sudo mount -t sysfs sys $ROOTFS_DIR/sys
 sudo mount -t tmpfs tmpfs $ROOTFS_DIR/run
 
-# 复制 DNS 配置以便 chroot 内可以联网
+# Copy DNS configuration for network access inside chroot
 if [ -L "$ROOTFS_DIR/etc/resolv.conf" ] || [ -e "$ROOTFS_DIR/etc/resolv.conf" ]; then
     sudo mv $ROOTFS_DIR/etc/resolv.conf $ROOTFS_DIR/etc/resolv.conf.bak
 fi
@@ -168,7 +170,7 @@ sudo cp /etc/resolv.conf $ROOTFS_DIR/etc/resolv.conf
 sudo chroot $ROOTFS_DIR /bin/bash
 ```
 
-在 chroot 中执行：
+Execute inside chroot:
 
 ```bash
 export DEBIAN_FRONTEND=noninteractive
@@ -181,21 +183,21 @@ update-locale LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:en_US:en LC_MESSAGES=zh_CN.UTF-8
 rm -f /etc/resolv.conf
 ln -s /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
-# 先安装内核相关依赖以及 initramfs-tools
+# First install kernel-related dependencies and initramfs-tools
 apt-get install -y \
     linux-base initramfs-tools kmod
 
 apt-get install -y --no-install-recommends \
     systemd-boot systemd-boot-efi
 
-# 安装基础网络与压缩工具（ubuntu-base 中可能缺失）
+# Install basic network and compression tools (may be missing in ubuntu-base)
 apt-get install -y \
     iputils-ping iproute2 net-tools dnsutils traceroute \
     xz-utils unzip zip bzip2 zstd p7zip-full \
     wget curl ca-certificates gnupg lsb-release \
     less file sudo
 
-# 配置 Mozilla 官方 APT 仓库，安装原生 deb 版 Firefox
+# Configure Mozilla official APT repository, install native deb version Firefox
 install -d -m 0755 /etc/apt/keyrings
 wget -qO- https://packages.mozilla.org/apt/repo-signing-key.gpg | \
     gpg --dearmor -o /etc/apt/keyrings/packages.mozilla.org.gpg
@@ -212,7 +214,7 @@ EOF
 
 apt-get update
 
-# 安装桌面环境与常用软件
+# Install desktop environment and common software
 apt-get install -y \
     ubuntu-desktop-minimal \
     language-pack-gnome-zh-hans \
@@ -225,7 +227,7 @@ apt-get install -y \
     ssh \
     firefox
 
-# 安装多媒体编解码器
+# Install multimedia codecs
 apt-get install -y \
     gstreamer1.0-libav gstreamer1.0-plugins-ugly \
     ubuntu-restricted-extras
@@ -234,7 +236,7 @@ apt-get clean
 exit
 ```
 
-回到宿主机，安装内核、模块、固件和本地工具到 rootfs：
+Back on the host, install kernel, modules, firmware and local tools to rootfs:
 
 ```bash
 cd $KERN_SRC
@@ -245,22 +247,22 @@ echo $KREL
 sudo make O=$KERN_OUT ARCH=arm64 INSTALL_MOD_PATH=$ROOTFS_DIR modules_install
 sudo rm -f $ROOTFS_DIR/lib/modules/$KREL/{build,source}
 
-# 按 Ubuntu 风格安装 kernel image
+# Install kernel image in Ubuntu style
 sudo mkdir -p $ROOTFS_DIR/boot
 sudo cp $KERN_OUT/arch/arm64/boot/Image \
     $ROOTFS_DIR/boot/vmlinuz-$KREL
 
-# Ubuntu 的 kernel-install 会从这里查找 DTB
+# Ubuntu's kernel-install will look for DTB from here
 sudo mkdir -p $ROOTFS_DIR/usr/lib/linux-image-$KREL/qcom
 sudo cp $KERN_OUT/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dtb \
      $ROOTFS_DIR/usr/lib/linux-image-$KREL/qcom/sc8280xp-huawei-gaokun3.dtb
 
-# 额外保留一份 /boot 下的 DTB，方便后续切换到 GRUB 等其他引导器
+# Keep an extra copy of DTB under /boot for convenience when switching to GRUB or other bootloaders
 sudo mkdir -p $ROOTFS_DIR/boot
 sudo cp $KERN_OUT/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dtb \
      $ROOTFS_DIR/boot/dtb-$KREL
 
-# 如果需要 EL2，再安装第二套 EL2 内核与 DTB
+# If EL2 is needed, install the second set of EL2 kernel and DTB
 if [ -n "$KREL_EL2" ]; then
     sudo make -C $KERN_SRC O=$KERN_OUT_EL2 ARCH=arm64 INSTALL_MOD_PATH=$ROOTFS_DIR modules_install
     sudo rm -f $ROOTFS_DIR/lib/modules/$KREL_EL2/{build,source}
@@ -274,11 +276,11 @@ if [ -n "$KREL_EL2" ]; then
          $ROOTFS_DIR/boot/dtb-$KREL_EL2
 fi
 
-# 直接复制项目内置的最小固件集
+# Directly copy the project's built-in minimum firmware set
 sudo mkdir -p $ROOTFS_DIR/lib/firmware
 sudo cp -r $FW_REPO/. $ROOTFS_DIR/lib/firmware/
 
-# 安装项目内的设备专属脚本与服务
+# Install project's device-specific scripts and services
 sudo mkdir -p $ROOTFS_DIR/usr/local/bin
 sudo mkdir -p $ROOTFS_DIR/etc/systemd/system
 sudo mkdir -p $ROOTFS_DIR/usr/share/alsa/ucm2/Qualcomm/sc8280xp
@@ -302,8 +304,8 @@ sudo chmod +x $ROOTFS_DIR/usr/local/bin/patch-nvm-bdaddr.py
 sudo cp $GAOKUN_DIR/tools/audio/sc8280xp.conf \
     $ROOTFS_DIR/usr/share/alsa/ucm2/Qualcomm/sc8280xp/
 
-# 让 Ubuntu 的 initramfs-tools 在早期启动阶段就带上 DSP 固件，
-# 否则标准启动项里 remoteproc 可能在根文件系统挂载前就因找不到固件而失败
+# Let Ubuntu's initramfs-tools include DSP firmware in early boot stage,
+# otherwise remoteproc may fail to find firmware before root filesystem is mounted in standard boot entry
 sudo mkdir -p $ROOTFS_DIR/etc/initramfs-tools/hooks
 sudo tee $ROOTFS_DIR/etc/initramfs-tools/hooks/gaokun3-firmware > /dev/null <<'EOF'
 #!/bin/sh
@@ -323,7 +325,7 @@ EOF
 sudo chmod 0755 $ROOTFS_DIR/etc/initramfs-tools/hooks/gaokun3-firmware
 ```
 
-卸载之前的虚拟文件系统：
+Unmount previous virtual filesystems:
 
 ```bash
 sudo umount $ROOTFS_DIR/dev/pts
@@ -335,9 +337,9 @@ sudo umount $ROOTFS_DIR/run
 
 ---
 
-## 第四步：制作可启动镜像
+## Step 4: Create Bootable Image
 
-### 1. 创建镜像和分区
+### 1. Create Image and Partitions
 
 ```bash
 cd $WORKDIR
@@ -356,7 +358,7 @@ EFI_UUID=$(sudo blkid -s UUID -o value ${LOOP}p1)
 ROOT_UUID=$(sudo blkid -s UUID -o value ${LOOP}p2)
 ```
 
-### 2. 同步 RootFS 到镜像
+### 2. Sync RootFS to Image
 
 ```bash
 MNT=/mnt/ego-ubuntu
@@ -374,7 +376,7 @@ UUID=${EFI_UUID}   /boot/efi vfat   defaults,nofail,x-systemd.device-timeout=10s
 EOF
 ```
 
-### 3. chroot 初始化并生成 systemd-boot / BLS
+### 3. chroot Initialization and Generate systemd-boot / BLS
 
 ```bash
 cleanup_mounts() {
@@ -396,7 +398,7 @@ sudo mount -t tmpfs tmpfs $MNT/run
 sudo chroot $MNT /bin/bash
 ```
 
-在 chroot 中执行：
+Execute inside chroot:
 
 ```bash
 install -d /etc/kernel
@@ -474,13 +476,13 @@ EOF
 exit
 ```
 
-说明：
+Notes:
 
-- 这里不再手工创建 `loader/entries/*.conf`，而是交给 `kernel-install` 的 `90-loaderentry.install` 自动生成标准 BLS 条目。
-- 默认使用 `--entry-token=machine-id`，所以最终条目文件名会是 `/boot/efi/loader/entries/<machine-id>-<kernel-release>.conf`。
-- 内核、`initrd` 和 DTB 会自动复制到 `/boot/efi/<machine-id>/<kernel-release>/` 下；这正是 BLS Type #1 的标准目录布局。
+- Instead of manually creating `loader/entries/*.conf`, we let `kernel-install`'s `90-loaderentry.install` auto-generate standard BLS entries.
+- Default uses `--entry-token=machine-id`, so final entry filenames will be `/boot/efi/loader/entries/<machine-id>-<kernel-release>.conf`.
+- Kernel, `initrd` and DTB will be automatically copied to `/boot/efi/<machine-id>/<kernel-release>/`; this is the standard BLS Type #1 directory layout.
 
-### 4. 收尾清理
+### 4. Final Cleanup
 
 ```bash
 sync
@@ -490,7 +492,7 @@ sudo losetup -d $LOOP
 
 ---
 
-## 第五步：双系统和 EL2 说明
+## Step 5: Dual Boot and EL2 Instructions
 
-- 双系统覆盖 EFI 的方式请参考 [dual_boot_guide.md](dual_boot_guide.md)
-- EL2 的 EFI 文件放置方式请参考 [el2_kvm_guide.md](el2_kvm_guide.md)
+- For dual boot EFI overlay method, refer to [dual_boot_guide_en.md](dual_boot_guide_en.md)
+- For EL2 EFI file placement, refer to [el2_kvm_guide_en.md](el2_kvm_guide_en.md)

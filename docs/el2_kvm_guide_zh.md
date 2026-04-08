@@ -1,3 +1,5 @@
+[English](el2_kvm_guide_en.md) | 中文
+
 # Huawei MateBook E Go 2023 EL2 + KVM 指南
 
 ## 1. 目标概述
