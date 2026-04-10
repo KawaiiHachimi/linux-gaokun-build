@@ -1,12 +1,12 @@
 [English](el2_kvm_guide_en.md) | 中文
 
-# Huawei MateBook E Go 2023 EL2 + KVM 指南
+# Huawei MateBook E Go 2023 EL2 实现说明
 
-## 1. 目标概述
+## 1. 文档定位
 
-- 使 MateBook E Go 2023 通过 Secure Launch 进入 EL2。
-- 在 EL2 模式下补全 DSP 启动链，尽可能恢复音频等依赖 remoteproc 的功能。
-- 在 Linux 中启用可用的 KVM。
+- 常规镜像与软件包构建流程已经可以可选产出 `-gaokun3-el2` 内核变体以及所需 EFI 载荷。
+- 本文更侧重说明这些 EL2 构建产物背后的实现细节、启动链结构，以及内核与固件要求。
+- 因此它更适合作为理解、调试和定制 EL2 路径的参考，而不是构建完成后必须逐项执行的清单。
 
 ## 2. 核心结论
 

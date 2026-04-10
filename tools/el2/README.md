@@ -1,5 +1,7 @@
 # EL2 EFI Payloads
 
+These files are implementation-side boot assets for the optional EL2 path. They are already consumed by the image build when EL2 output is enabled.
+
 This directory now only keeps the EFI-side files that are still deployed by the image build:
 
 - `slbounceaa64.efi`

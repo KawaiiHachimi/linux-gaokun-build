@@ -1,12 +1,12 @@
 English | [中文](el2_kvm_guide_zh.md)
 
-# Huawei MateBook E Go 2023 EL2 + KVM Guide
+# Huawei MateBook E Go 2023 EL2 Implementation Notes
 
-## 1. Overview
+## 1. Positioning
 
-- Enable MateBook E Go 2023 to enter EL2 through Secure Launch.
-- Complete DSP boot chain in EL2 mode to restore audio and other remoteproc-dependent features as much as possible.
-- Enable usable KVM in Linux.
+- The normal image and package build flow can already include an optional `-gaokun3-el2` kernel variant and the required EFI payloads.
+- This document focuses on implementation details, boot-chain structure, and kernel/firmware expectations behind that EL2-capable build output.
+- Use it when you want to understand, debug, or customize the EL2 path rather than as a mandatory post-build checklist.
 
 ## 2. Key Conclusions
 

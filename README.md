@@ -2,7 +2,7 @@ English | [中文](docs/README_zh.md)
 
 # linux-gaokun-buildbot
 
-Build scripts, patches, kernel config, DTS files, tools, and firmware for Linux images targeting the Huawei MateBook E Go 2023 (`gaokun3` / `SC8280XP`).
+Build scripts, patches, kernel config, DTS files, tools, and firmware for Linux images targeting the Huawei MateBook E Go 2023 (codename `gaokun3`) based on Qualcomm Snapdragon 8cx Gen3 (`SC8280XP`).
 
 The image pipeline now uses `systemd-boot` by default and can optionally build a second EL2 kernel variant with `CONFIG_LOCALVERSION="-gaokun3-el2"`.
 
@@ -41,11 +41,26 @@ The image and local-install workflows now follow the standard `kernel-install` +
 ## Getting started
 
 - Dual-boot guide: [English](docs/dual_boot_guide_en.md) | [中文](docs/dual_boot_guide_zh.md)
-- EL2 + KVM guide: [English](docs/el2_kvm_guide_en.md) | [中文](docs/el2_kvm_guide_zh.md)
+- EL2 implementation notes: [English](docs/el2_kvm_guide_en.md) | [中文](docs/el2_kvm_guide_zh.md)
 - Build guide – Fedora 44: [English](docs/matebook_ego_build_guide_fedora44_en.md) | [中文](docs/matebook_ego_build_guide_fedora44_zh.md)
 - Build guide – Ubuntu 26.04: [English](docs/matebook_ego_build_guide_ubuntu26.04_en.md) | [中文](docs/matebook_ego_build_guide_ubuntu26.04_zh.md)
 - GitHub Actions – Fedora: [.github/workflows/fedora-gaokun3-release.yml](.github/workflows/fedora-gaokun3-release.yml)
 - GitHub Actions – Ubuntu: [.github/workflows/ubuntu-gaokun3-release.yml](.github/workflows/ubuntu-gaokun3-release.yml)
+- Repository validation: [.github/workflows/repo-validation.yml](.github/workflows/repo-validation.yml)
+
+## Patch sources
+
+- `0001` to `0009` and `0017`: adapted from [right-0903/linux-gaokun](https://github.com/right-0903/linux-gaokun)
+- `0010`: adapted from [whitelewi1-ctrl/matebook-e-go-linux](https://github.com/whitelewi1-ctrl/matebook-e-go-linux)
+- `0011`: local change in this repository to enable DSC and allow 60 Hz / 120 Hz switching
+- `0012`: adapted from [chiyuki0325/EGoTouchRev-Linux](https://github.com/chiyuki0325/EGoTouchRev-Linux)
+- `0013`: adapted from [TheUnknownThing/linux-gaokun](https://github.com/TheUnknownThing/linux-gaokun)
+- `0014` to `0016`: adapted from the Qualcomm Iris SC8280XP series on lore.kernel.org: <https://lore.kernel.org/all/20260125-iris-sc8280xp-v3-2-d21861a9ea33@oss.qualcomm.com/>
+- `0099`: local patch in this repository to import the current DTS files and `gaokun3_defconfig`
+
+## Feature Support
+
+For an overview of hardware support status on the device, see [right-0903/linux-gaokun Feature Support](https://github.com/right-0903/linux-gaokun?tab=readme-ov-file#feature-support).
 
 ## References
 

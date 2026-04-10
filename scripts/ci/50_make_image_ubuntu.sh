@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+. "$(dirname "$0")/lib/common_image.sh"
+
 : "${GAOKUN_DIR:?missing GAOKUN_DIR}"
 : "${WORKDIR:?missing WORKDIR}"
 : "${ROOTFS_DIR:?missing ROOTFS_DIR}"
@@ -50,6 +52,7 @@ sudo mkdir -p "$MNT/boot/efi"
 sudo mount "${LOOP}p1" "$MNT/boot/efi"
 
 sudo rsync -aHAX --exclude='/proc/*' --exclude='/sys/*' --exclude='/dev/*' --exclude='/run/*' "$ROOTFS_DIR/" "$MNT/"
+install_common_image_assets "$MNT" "$GAOKUN_DIR"
 
 sudo tee "$MNT/etc/fstab" >/dev/null <<EOF
 UUID=${ROOT_UUID}  /         ext4   errors=remount-ro,noatime  0  1
@@ -89,37 +92,8 @@ Language=zh_CN.UTF-8
 SystemAccount=true
 EOF
 
-mkdir -p /home/user/.config
-cat > /home/user/.config/monitors.xml <<'EOF'
-<monitors version="2">
-    <configuration>
-        <layoutmode>logical</layoutmode>
-        <logicalmonitor>
-            <x>0</x>
-            <y>0</y>
-            <scale>1.6666666269302368</scale>
-            <primary>yes</primary>
-            <transform>
-                <rotation>right</rotation>
-                <flipped>no</flipped>
-            </transform>
-            <monitor>
-                <monitorspec>
-                    <connector>DSI-1</connector>
-                    <vendor>unknown</vendor>
-                    <product>unknown</product>
-                    <serial>unknown</serial>
-                </monitorspec>
-                <mode>
-                    <width>1600</width>
-                    <height>2560</height>
-                    <rate>60.000</rate>
-                </mode>
-            </monitor>
-        </logicalmonitor>
-    </configuration>
-</monitors>
-EOF
+install -d -m 0755 /home/user/.config
+install -Dm644 /usr/local/share/gaokun/monitors.xml /home/user/.config/monitors.xml
 chown -R user:user /home/user
 
 install -d -m 1777 -o root -g root /tmp/.X11-unix
@@ -140,16 +114,6 @@ EOF
 
 systemctl enable gdm NetworkManager ssh huawei-touchpad.service \
   gaokun-fix-x11-unix.service gdm-monitor-sync.service || true
-
-mkdir -p /etc/modules-load.d
-echo -e "pci-pwrctrl-pwrseq\nath11k_pci" > /etc/modules-load.d/wifi.conf
-echo "btqca" > /etc/modules-load.d/bluetooth.conf
-echo -e "panel-himax-hx83121a\nhimax_hx83121a_spi\nmsm\nhid_multitouch" > /etc/modules-load.d/display.conf
-echo -e "lpasscc_sc8280xp\nsnd-soc-sc8280xp" > /etc/modules-load.d/audio.conf
-echo -e "huawei-gaokun-ec\nhuawei-gaokun-battery\nucsi_huawei_gaokun" > /etc/modules-load.d/battery.conf
-
-mkdir -p /etc/modprobe.d
-echo "softdep pinctrl_sc8280xp_lpass_lpi pre: lpasscc_sc8280xp" > /etc/modprobe.d/audio-deps.conf
 
 cat >> /etc/initramfs-tools/modules <<'MODEOF'
 # Storage and USB
@@ -268,19 +232,7 @@ EOF
 CHROOT_EOF
 
 if [[ "$BUILD_EL2" == "true" && -n "$KREL_EL2" ]]; then
-  sudo mkdir -p "$MNT/boot/efi/EFI/systemd/drivers" "$MNT/boot/efi/firmware"
-  sudo install -Dm644 "$GAOKUN_DIR/tools/el2/slbounceaa64.efi" \
-    "$MNT/boot/efi/EFI/systemd/drivers/slbounceaa64.efi"
-  sudo install -Dm644 "$GAOKUN_DIR/tools/el2/qebspilaa64.efi" \
-    "$MNT/boot/efi/EFI/systemd/drivers/qebspilaa64.efi"
-  sudo install -Dm644 "$GAOKUN_DIR/tools/el2/tcblaunch.exe" \
-    "$MNT/boot/efi/tcblaunch.exe"
-  sudo install -Dm644 "$MNT/lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcadsp8280.mbn" \
-    "$MNT/boot/efi/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcadsp8280.mbn"
-  sudo install -Dm644 "$MNT/lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qccdsp8280.mbn" \
-    "$MNT/boot/efi/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qccdsp8280.mbn"
-  sudo install -Dm644 "$MNT/lib/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn" \
-    "$MNT/boot/efi/firmware/qcom/sc8280xp/HUAWEI/gaokun3/qcslpi8280.mbn"
+  install_el2_efi_payloads "$MNT" "$GAOKUN_DIR"
 fi
 
 sync

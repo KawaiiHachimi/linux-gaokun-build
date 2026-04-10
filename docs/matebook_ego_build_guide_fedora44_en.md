@@ -2,7 +2,8 @@ English | [中文](matebook_ego_build_guide_fedora44_zh.md)
 
 # Huawei MateBook E Go 2023 Fedora 44 Manual Build Guide
 
-> **Target Device**: Huawei MateBook E Go 2023 (`SC8280XP` / `gaokun3`)  
+> **Target Device**: Huawei MateBook E Go 2023 (codename `gaokun3`)  
+> **Platform**: Qualcomm Snapdragon 8cx Gen3 (`SC8280XP`)  
 > **Target System**: Fedora 44 GNOME, systemd-boot boot, Btrfs root filesystem  
 > **Recommended Host**: Fedora or other RPM/DNF-based distributions  
 > **Repository Assumption**: This document assumes your current repository is at `~/gaokun/linux-gaokun-buildbot`
@@ -255,6 +256,13 @@ sudo chmod +x $ROOTFS_DIR/usr/local/bin/patch-nvm-bdaddr.py
 # Audio UCM configuration
 sudo cp $GAOKUN_DIR/tools/audio/sc8280xp.conf \
     $ROOTFS_DIR/usr/share/alsa/ucm2/Qualcomm/sc8280xp/
+
+# Shared image assets used by the CI image pipeline
+sudo mkdir -p $ROOTFS_DIR/usr/local/share/gaokun
+sudo cp -a $GAOKUN_DIR/tools/image-assets/etc/. \
+    $ROOTFS_DIR/etc/
+sudo cp $GAOKUN_DIR/tools/image-assets/usr/local/share/gaokun/monitors.xml \
+    $ROOTFS_DIR/usr/local/share/gaokun/monitors.xml
 ```
 
 ---
@@ -439,4 +447,5 @@ sudo losetup -d $LOOP
 ## Step 5: Dual Boot and EL2 Instructions
 
 - For dual boot EFI overlay method, refer to [dual_boot_guide_en.md](dual_boot_guide_en.md)
-- For EL2 EFI file placement, refer to [el2_kvm_guide_en.md](el2_kvm_guide_en.md)
+- EL2 support is already included when you also build the `-gaokun3-el2` kernel variant in this guide.
+- Refer to [el2_kvm_guide_en.md](el2_kvm_guide_en.md) for implementation details, boot-chain structure, and debugging notes.

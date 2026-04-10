@@ -2,7 +2,8 @@
 
 # Huawei MateBook E Go 2023 Fedora 44 手动构建指南
 
-> **目标机型**：Huawei MateBook E Go 2023 (`SC8280XP` / `gaokun3`)  
+> **目标机型**：Huawei MateBook E Go 2023（代号 `gaokun3`）  
+> **平台**：高通骁龙 8cx Gen3（`SC8280XP`）  
 > **目标系统**：Fedora 44 GNOME，systemd-boot 启动，Btrfs 根文件系统  
 > **推荐宿主机**：Fedora 或其他基于 RPM/DNF 的发行版  
 > **仓库假设**：本文默认你当前仓库位于 `~/gaokun/linux-gaokun-buildbot`
@@ -255,6 +256,13 @@ sudo chmod +x $ROOTFS_DIR/usr/local/bin/patch-nvm-bdaddr.py
 # 音频 UCM 配置
 sudo cp $GAOKUN_DIR/tools/audio/sc8280xp.conf \
     $ROOTFS_DIR/usr/share/alsa/ucm2/Qualcomm/sc8280xp/
+
+# 复用 CI 镜像流水线里的共享资源
+sudo mkdir -p $ROOTFS_DIR/usr/local/share/gaokun
+sudo cp -a $GAOKUN_DIR/tools/image-assets/etc/. \
+    $ROOTFS_DIR/etc/
+sudo cp $GAOKUN_DIR/tools/image-assets/usr/local/share/gaokun/monitors.xml \
+    $ROOTFS_DIR/usr/local/share/gaokun/monitors.xml
 ```
 
 ---
@@ -439,4 +447,5 @@ sudo losetup -d $LOOP
 ## 第五步：双系统和 EL2 说明
 
 - 双系统覆盖 EFI 的方式请参考 [dual_boot_guide_zh.md](dual_boot_guide_zh.md)
-- EL2 的 EFI 文件放置方式请参考 [el2_kvm_guide_zh.md](el2_kvm_guide_zh.md)
+- 如果在本指南中同时构建了 `-gaokun3-el2` 内核变体，产出的镜像就已经具备 EL2 支持。
+- 有关实现细节、启动链结构和排障说明，请参考 [el2_kvm_guide_zh.md](el2_kvm_guide_zh.md)
