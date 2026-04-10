@@ -2,9 +2,7 @@
 
 # linux-gaokun-buildbot
 
-面向华为 MateBook E Go 2023（代号 `gaokun3`）的 Linux 镜像构建脚本、补丁、内核配置、设备树文件、工具和固件。
-
-该设备基于高通骁龙 8cx Gen3（`SC8280XP`）平台。
+面向华为 MateBook E Go 2023（代号 `gaokun3`）、基于高通骁龙 8cx Gen3（`SC8280XP`）平台的 Linux 镜像构建脚本、补丁、内核配置、设备树文件、工具和固件。
 
 镜像流水线现默认使用 `systemd-boot`，并可选构建带 `CONFIG_LOCALVERSION="-gaokun3-el2"` 的第二套 EL2 内核变体。
 
@@ -49,6 +47,20 @@
 - GitHub Actions – Fedora：[.github/workflows/fedora-gaokun3-release.yml](../.github/workflows/fedora-gaokun3-release.yml)
 - GitHub Actions – Ubuntu：[.github/workflows/ubuntu-gaokun3-release.yml](../.github/workflows/ubuntu-gaokun3-release.yml)
 - 仓库校验工作流：[.github/workflows/repo-validation.yml](../.github/workflows/repo-validation.yml)
+
+## 补丁来源
+
+- `0001` 到 `0009` 以及 `0017`：来自 [right-0903/linux-gaokun](https://github.com/right-0903/linux-gaokun)
+- `0010`：来自 [whitelewi1-ctrl/matebook-e-go-linux](https://github.com/whitelewi1-ctrl/matebook-e-go-linux)
+- `0011`：本仓库内的本地改动，用于启用 DSC 以及 60 Hz / 120 Hz 切换
+- `0012`：来自 [chiyuki0325/EGoTouchRev-Linux](https://github.com/chiyuki0325/EGoTouchRev-Linux)
+- `0013`：来自 [TheUnknownThing/linux-gaokun](https://github.com/TheUnknownThing/linux-gaokun)
+- `0014` 到 `0016`：来自 lore.kernel.org 上的 Qualcomm Iris SC8280XP 系列补丁：<https://lore.kernel.org/all/20260125-iris-sc8280xp-v3-2-d21861a9ea33@oss.qualcomm.com/>
+- `0099`：本仓库内的本地补丁，用于导入当前的 DTS 文件和 `gaokun3_defconfig`
+
+## 功能支持
+
+设备硬件工作情况可参考 [right-0903/linux-gaokun 的 Feature Support](https://github.com/right-0903/linux-gaokun?tab=readme-ov-file#feature-support)。
 
 ## 参考
 
