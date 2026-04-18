@@ -1,13 +1,13 @@
-From b2903e07e09227595b2412af80a54cfe58aede08 Mon Sep 17 00:00:00 2001
+From 4ca38450d81c004fed593ef15db8b5b44f8482e5 Mon Sep 17 00:00:00 2001
 From: cool <bilibili@att.net>
-Date: Wed, 15 Apr 2026 16:13:09 +0000
+Date: Sat, 18 Apr 2026 19:14:13 +0800
 Subject: [PATCH] arm64: gaokun3: import local dts and defconfig
 
 ---
  .../qcom/sc8280xp-huawei-gaokun3-camera.dtsi  | 360 ++++++++++++
- .../boot/dts/qcom/sc8280xp-huawei-gaokun3.dts | 410 +++++++++++---
+ .../boot/dts/qcom/sc8280xp-huawei-gaokun3.dts | 413 +++++++++++---
  arch/arm64/configs/gaokun3_defconfig          | 511 ++++++++++++++++++
- 3 files changed, 1192 insertions(+), 89 deletions(-)
+ 3 files changed, 1195 insertions(+), 89 deletions(-)
  create mode 100644 arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3-camera.dtsi
  create mode 100644 arch/arm64/configs/gaokun3_defconfig
 
@@ -378,7 +378,7 @@ index 000000000..79fa9751a
 +	};
 +};
 diff --git a/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dts b/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dts
-index 9819454ab..ce52e57c0 100644
+index 9819454ab..c2e3cdcc9 100644
 --- a/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dts
 +++ b/arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dts
 @@ -11,6 +11,7 @@
@@ -685,21 +685,24 @@ index 9819454ab..ce52e57c0 100644
  };
  
  &i2c15 {
-@@ -637,7 +684,12 @@ embedded-controller@38 {
+@@ -637,7 +684,15 @@ embedded-controller@38 {
  		compatible = "huawei,gaokun3-ec";
  		reg = <0x38>;
  
 -		interrupts-extended = <&tlmm 107 IRQ_TYPE_LEVEL_LOW>;
-+		interrupts-extended = <&tlmm 107 IRQ_TYPE_LEVEL_LOW>; /* shared */
-+		lid-gpios = <&tlmm 173 GPIO_ACTIVE_HIGH>;
++		interrupts = <GIC_SPI 644 IRQ_TYPE_EDGE_RISING>;
++		enable-gpios = <&tlmm 173 GPIO_ACTIVE_HIGH>;
 +		bat-gpios = <&tlmm 41 GPIO_ACTIVE_HIGH>;
++
++		// not stable yet, so comment not it
++		// wakeup-source;
 +
 +		pinctrl-0 = <&ec_default>;
 +		pinctrl-names = "default";
  
  		#address-cells = <1>;
  		#size-cells = <0>;
-@@ -647,7 +699,6 @@ connector@0 {
+@@ -647,7 +702,6 @@ connector@0 {
  			reg = <0>;
  			power-role = "dual";
  			data-role = "dual";
@@ -707,7 +710,7 @@ index 9819454ab..ce52e57c0 100644
  			ports {
  				#address-cells = <1>;
  				#size-cells = <0>;
-@@ -655,7 +706,7 @@ ports {
+@@ -655,7 +709,7 @@ ports {
  				port@0 {
  					reg = <0>;
  
@@ -716,7 +719,7 @@ index 9819454ab..ce52e57c0 100644
  						remote-endpoint = <&usb_0_dwc3_hs>;
  					};
  				};
-@@ -663,7 +714,7 @@ ucsi0_hs_in: endpoint {
+@@ -663,7 +717,7 @@ ucsi0_hs_in: endpoint {
  				port@1 {
  					reg = <1>;
  
@@ -725,7 +728,7 @@ index 9819454ab..ce52e57c0 100644
  						remote-endpoint = <&usb_0_qmpphy_out>;
  					};
  				};
-@@ -725,7 +776,8 @@ &mdss0_dp0 {
+@@ -725,7 +779,8 @@ &mdss0_dp0 {
  };
  
  &mdss0_dp0_out {
@@ -735,7 +738,7 @@ index 9819454ab..ce52e57c0 100644
  	remote-endpoint = <&usb_0_qmpphy_dp_in>;
  };
  
-@@ -734,10 +786,92 @@ &mdss0_dp1 {
+@@ -734,10 +789,92 @@ &mdss0_dp1 {
  };
  
  &mdss0_dp1_out {
@@ -829,7 +832,7 @@ index 9819454ab..ce52e57c0 100644
  &pcie2a {
  	perst-gpios = <&tlmm 143 GPIO_ACTIVE_LOW>;
  	wake-gpios = <&tlmm 145 GPIO_ACTIVE_LOW>;
-@@ -785,6 +919,9 @@ wifi@0 {
+@@ -785,6 +922,9 @@ wifi@0 {
  		vddrfa0p8-supply = <&vreg_pmu_rfa_0p8>;
  		vddrfa1p2-supply = <&vreg_pmu_rfa_1p2>;
  		vddrfa1p8-supply = <&vreg_pmu_rfa_1p7>;
@@ -839,7 +842,7 @@ index 9819454ab..ce52e57c0 100644
  	};
  };
  
-@@ -969,13 +1106,18 @@ &remoteproc_nsp0 {
+@@ -969,13 +1109,18 @@ &remoteproc_nsp0 {
  	status = "okay";
  };
  
@@ -859,7 +862,7 @@ index 9819454ab..ce52e57c0 100644
  	audio-routing = "SpkrLeft IN", "WSA_SPK1 OUT",
  			"SpkrRight IN", "WSA_SPK2 OUT",
  			"IN1_HPHL", "HPHL_OUT",
-@@ -1125,6 +1267,8 @@ bluetooth {
+@@ -1125,6 +1270,8 @@ bluetooth {
  		vddrfa1p8-supply = <&vreg_pmu_rfa_1p7>;
  
  		max-speed = <3200000>;
@@ -868,7 +871,7 @@ index 9819454ab..ce52e57c0 100644
  	};
  };
  
-@@ -1141,7 +1285,7 @@ &usb_0_dwc3_hs {
+@@ -1141,7 +1288,7 @@ &usb_0_dwc3_hs {
  };
  
  &usb_0_hsphy {
@@ -877,7 +880,7 @@ index 9819454ab..ce52e57c0 100644
  	vdda18-supply = <&vreg_l1c>;
  	vdda33-supply = <&vreg_l7d>;
  
-@@ -1149,9 +1293,10 @@ &usb_0_hsphy {
+@@ -1149,9 +1296,10 @@ &usb_0_hsphy {
  };
  
  &usb_0_qmpphy {
@@ -890,7 +893,7 @@ index 9819454ab..ce52e57c0 100644
  	orientation-switch;
  
  	status = "okay";
-@@ -1178,7 +1323,7 @@ &usb_1_dwc3_hs {
+@@ -1178,7 +1326,7 @@ &usb_1_dwc3_hs {
  };
  
  &usb_1_hsphy {
@@ -899,7 +902,7 @@ index 9819454ab..ce52e57c0 100644
  	vdda18-supply = <&vreg_l1c>;
  	vdda33-supply = <&vreg_l13c>;
  
-@@ -1186,8 +1331,8 @@ &usb_1_hsphy {
+@@ -1186,8 +1334,8 @@ &usb_1_hsphy {
  };
  
  &usb_1_qmpphy {
@@ -910,7 +913,7 @@ index 9819454ab..ce52e57c0 100644
  
  	orientation-switch;
  
-@@ -1207,7 +1352,7 @@ &usb_2 {
+@@ -1207,7 +1355,7 @@ &usb_2 {
  };
  
  &usb_2_hsphy0 {
@@ -919,7 +922,7 @@ index 9819454ab..ce52e57c0 100644
  	vdda18-supply = <&vreg_l1c>;
  	vdda33-supply = <&vreg_l7d>;
  
-@@ -1215,7 +1360,7 @@ &usb_2_hsphy0 {
+@@ -1215,7 +1363,7 @@ &usb_2_hsphy0 {
  };
  
  &usb_2_hsphy1 {
@@ -928,7 +931,7 @@ index 9819454ab..ce52e57c0 100644
  	vdda18-supply = <&vreg_l1c>;
  	vdda33-supply = <&vreg_l7d>;
  
-@@ -1223,7 +1368,7 @@ &usb_2_hsphy1 {
+@@ -1223,7 +1371,7 @@ &usb_2_hsphy1 {
  };
  
  &usb_2_hsphy2 {
@@ -937,7 +940,7 @@ index 9819454ab..ce52e57c0 100644
  	vdda18-supply = <&vreg_l8c>;
  	vdda33-supply = <&vreg_l2d>;
  
-@@ -1231,7 +1376,7 @@ &usb_2_hsphy2 {
+@@ -1231,7 +1379,7 @@ &usb_2_hsphy2 {
  };
  
  &usb_2_hsphy3 {
@@ -946,7 +949,7 @@ index 9819454ab..ce52e57c0 100644
  	vdda18-supply = <&vreg_l8c>;
  	vdda33-supply = <&vreg_l2d>;
  
-@@ -1239,15 +1384,15 @@ &usb_2_hsphy3 {
+@@ -1239,15 +1387,15 @@ &usb_2_hsphy3 {
  };
  
  &usb_2_qmpphy0 {
@@ -966,7 +969,7 @@ index 9819454ab..ce52e57c0 100644
  
  	status = "okay";
  };
-@@ -1263,6 +1408,11 @@ &vamacro {
+@@ -1263,6 +1411,11 @@ &vamacro {
  	status = "okay";
  };
  
@@ -978,20 +981,20 @@ index 9819454ab..ce52e57c0 100644
  &wsamacro {
  	status = "okay";
  };
-@@ -1300,8 +1450,28 @@ hastings_reg_en: hastings-reg-en-state {
+@@ -1300,8 +1453,28 @@ hastings_reg_en: hastings-reg-en-state {
  };
  
  &tlmm {
 +	gpio-reserved-ranges = <70 2>, <74 6>, <83 4>, <125 2>, <128 2>;
-+
+ 
+-	gpio-reserved-ranges = <70 2>, <74 6>, <83 4>, <125 2>, <128 2>, <154 4>;
 +	avdd_reg_en: avdd-reg-en-state {
 +		pins = "gpio52";
 +		function = "gpio";
 +		drive-strength = <2>;
 +		bias-disable;
 +	};
- 
--	gpio-reserved-ranges = <70 2>, <74 6>, <83 4>, <125 2>, <128 2>, <154 4>;
++
 +	avee_reg_en: avee-reg-en-state {
 +		pins = "gpio53";
 +		function = "gpio";
@@ -1008,7 +1011,7 @@ index 9819454ab..ce52e57c0 100644
  
  	bt_default: bt-default-state {
  		hstp-bt-en-pins {
-@@ -1318,6 +1488,29 @@ hstp-sw-ctrl-pins {
+@@ -1318,6 +1491,29 @@ hstp-sw-ctrl-pins {
  		};
  	};
  
@@ -1020,7 +1023,7 @@ index 9819454ab..ce52e57c0 100644
 +	};
 +
 +	ec_default: ec-default-state {
-+		lid-pins {
++		en-pins {
 +			pins = "gpio173";
 +			function = "gpio";
 +			drive-strength = <4>;
@@ -1038,7 +1041,7 @@ index 9819454ab..ce52e57c0 100644
  	i2c4_default: i2c4-default-state {
  		pins = "gpio171", "gpio172";
  		function = "qup4";
-@@ -1332,6 +1525,13 @@ i2c15_default: i2c15-default-state {
+@@ -1332,6 +1528,13 @@ i2c15_default: i2c15-default-state {
  		bias-pull-up;
  	};
  
@@ -1052,7 +1055,7 @@ index 9819454ab..ce52e57c0 100644
  	mode_pin_active: mode-pin-state {
  		pins = "gpio26";
  		function = "gpio";
-@@ -1411,6 +1611,39 @@ perst-n-pins {
+@@ -1411,6 +1614,39 @@ perst-n-pins {
  		};
  	};
  
@@ -1092,7 +1095,7 @@ index 9819454ab..ce52e57c0 100644
  	ts0_default: ts0-default-state {
  		int-n-pins {
  			pins = "gpio175";
-@@ -1424,7 +1657,6 @@ reset-n-pins {
+@@ -1424,7 +1660,6 @@ reset-n-pins {
  			function = "gpio";
  			drive-strength = <2>;
  			bias-disable;

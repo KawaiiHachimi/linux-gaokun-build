@@ -119,8 +119,9 @@ struct gaokun_ec {
 	struct mutex lock; /* EC transaction lock */
 	struct blocking_notifier_head notifier_list;
 	struct device *hwmon_dev;
-	struct gpio_desc *lid_sta;
 	struct input_dev *idev;
+	struct gpio_desc *enable_gpio;
+	bool lid_opened;
 	bool suspended;
 };
 
@@ -628,13 +629,12 @@ static int gaokun_ec_suspend(struct device *dev)
 	if (ec->suspended)
 		return 0;
 
-	disable_irq(ec->client->irq);
-
 	ret = gaokun_ec_write(ec, ec_req);
-	if (ret) {
-		enable_irq(ec->client->irq);
+	if (ret)
 		return ret;
-	}
+
+	msleep(100);
+	gpiod_set_value(ec->enable_gpio, 0);
 
 	ec->suspended = true;
 
@@ -651,18 +651,25 @@ static int gaokun_ec_resume(struct device *dev)
 	if (!ec->suspended)
 		return 0;
 
+	gpiod_set_value(ec->enable_gpio, 1);
+	msleep(100);
+
 	for (i = 0; i < 3; ++i) {
 		ret = gaokun_ec_write(ec, ec_req);
 		if (ret == 0)
 			break;
 
-		msleep(100); /* EC need time to resume */
+		msleep(100); /* I2C bus need time to resume */
 	}
 
 	if (ret)
 		return ret;
 
-	enable_irq(ec->client->irq);
+	/* Resume may be unstable, so open lid anyways */
+	input_report_switch(ec->idev, SW_LID, 0);
+	input_sync(ec->idev);
+	ec->lid_opened = true;
+
 	ec->suspended = false;
 
 	return 0;
@@ -728,6 +735,10 @@ static irqreturn_t gaokun_ec_irq_handler(int irq, void *data)
 	u8 status, id;
 	int ret;
 
+	/* EC IO here before resume will fail at the first time, so ignore it */
+	if (ec->suspended)
+		return IRQ_HANDLED;
+
 	ret = gaokun_ec_read_byte(ec, ec_req, &id);
 	if (ret)
 		return IRQ_HANDLED;
@@ -739,9 +750,11 @@ static irqreturn_t gaokun_ec_irq_handler(int irq, void *data)
 	case EC_EVENT_LID:
 		gaokun_ec_psy_read_byte(ec, EC_LID_STATE, &status);
 		status &= EC_LID_OPEN;
-		gpiod_set_value(ec->lid_sta, !!status);
-		input_report_switch(ec->idev, SW_LID, !status);
-		input_sync(ec->idev);
+		if (ec->lid_opened != !!status) {
+			input_report_switch(ec->idev, SW_LID, !status);
+			input_sync(ec->idev);
+			ec->lid_opened = !!status;
+		}
 		break;
 
 	default:
@@ -767,14 +780,16 @@ static int gaokun_ec_probe(struct i2c_client *client)
 
 	ec->client = client;
 	i2c_set_clientdata(client, ec);
+	device_init_wakeup(dev, true);
 	BLOCKING_INIT_NOTIFIER_HEAD(&ec->notifier_list);
 
-	/* Lid switch */
-	ec->lid_sta = devm_gpiod_get_optional(dev, "lid", GPIOD_OUT_HIGH);
-	if (IS_ERR(ec->lid_sta))
-		dev_err_probe(dev, PTR_ERR(ec->lid_sta),
-			      "Failed to get lid-gpios\n");
+	ec->enable_gpio = devm_gpiod_get_optional(dev, "enable",
+						  GPIOD_OUT_HIGH);
+	if (IS_ERR(ec->enable_gpio))
+		dev_err_probe(dev, PTR_ERR(ec->enable_gpio),
+			      "Failed to get enable-gpios\n");
 
+	/* Lid switch */
 	ec->idev = devm_input_allocate_device(dev);
 	if (!ec->idev)
 		return -ENOMEM;

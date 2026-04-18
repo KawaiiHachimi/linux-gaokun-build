@@ -613,6 +613,7 @@ static int gaokun_psy_probe(struct auxiliary_device *adev,
 	auxiliary_set_drvdata(adev, ecbat);
 
 	psy_cfg.drv_data = ecbat;
+	psy_cfg.no_wakeup_source = true;
 	ecbat->adp_psy = devm_power_supply_register(dev, &gaokun_psy_adp_desc,
 						    &psy_cfg);
 	if (IS_ERR(ecbat->adp_psy))
@@ -621,7 +622,6 @@ static int gaokun_psy_probe(struct auxiliary_device *adev,
 
 	psy_cfg.supplied_to = (char **)&gaokun_psy_bat_desc.name;
 	psy_cfg.num_supplicants = 1;
-	psy_cfg.no_wakeup_source = true;
 	psy_cfg.attr_grp = gaokun_psy_features_groups;
 	ecbat->bat_psy = devm_power_supply_register(dev, &gaokun_psy_bat_desc,
 						    &psy_cfg);
