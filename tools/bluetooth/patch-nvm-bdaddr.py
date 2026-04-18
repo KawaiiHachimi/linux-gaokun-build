@@ -8,10 +8,10 @@ import struct
 import sys
 from pathlib import Path
 
-NVM_FILES = (
-    Path("/lib/firmware/qca/wcnhpnv21g.bin"),
-    Path("/lib/firmware/qca/hpnv21g.bin"),
-    Path("/lib/firmware/qca/hpnv21g.b9f"),
+FIRMWARE_DIR = Path("/lib/firmware/qca")
+NVM_PATTERNS = (
+    "wcnhpnv21g.bin",
+    "hpnv21g.*",
 )
 SERIAL_PATH = Path("/sys/class/dmi/id/product_serial")
 BD_ADDR_TAG_ID = 2
@@ -73,6 +73,20 @@ def read_serial():
     return serial or "gaokun3"
 
 
+def iter_nvm_files():
+    """Yield supported NVM files, excluding backup copies."""
+    seen = set()
+
+    for pattern in NVM_PATTERNS:
+        for path in sorted(FIRMWARE_DIR.glob(pattern)):
+            if not path.is_file() or path.name.endswith(".orig"):
+                continue
+            if path in seen:
+                continue
+            seen.add(path)
+            yield path
+
+
 def patch_file(path, desired_addr):
     """Patch one firmware file if the stored address differs."""
     data = bytearray(path.read_bytes())
@@ -98,7 +112,7 @@ def main():
         print("Error: must run as root", file=sys.stderr)
         sys.exit(1)
 
-    available_files = [path for path in NVM_FILES if path.exists()]
+    available_files = list(iter_nvm_files())
     if not available_files:
         print("Error: no supported QCA NVM files found", file=sys.stderr)
         sys.exit(1)
